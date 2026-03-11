@@ -81,7 +81,6 @@ describe('Vertex Shader Math (Section 2.3)', () => {
       // θ = π/2
       // sin(π/2) = 1, cos(π/2) = 0
       const expectedX = curlAxisX + radius * 1;
-      const expectedZ = radius * (1 - 0);
 
       expect(result.x).toBeCloseTo(expectedX, 5);
       expect(result.z).toBeCloseTo(radius, 5);
@@ -98,7 +97,6 @@ describe('Vertex Shader Math (Section 2.3)', () => {
       // θ = π
       // sin(π) = 0, cos(π) = -1
       const expectedX = curlAxisX + radius * 0;
-      const expectedZ = radius * (1 - (-1));
 
       expect(result.x).toBeCloseTo(expectedX, 5);
       expect(result.z).toBeCloseTo(2 * radius, 5);
@@ -167,11 +165,6 @@ describe('Vertex Shader Math (Section 2.3)', () => {
         const phi = progress * Math.PI;
         const curlAxisX = pageWidth * Math.cos(phi);
         const d = testX - curlAxisX;
-
-        let region = -1;
-        if (d < 0) region = 1;
-        else if (d <= Math.PI * radius) region = 2;
-        else region = 3;
 
         // Verify mutual exclusivity: test that toggling any condition changes region
         const isRegion1 = d < 0;
@@ -281,7 +274,6 @@ describe('Vertex Shader Math (Section 2.3)', () => {
 
   describe('Semantic Violations (Should Never Happen)', () => {
     it('theta is never negative or greater than π', () => {
-      const curlAxisX = 0.5;
       const radius = 0.15;
 
       // Test across the valid cylinder region
@@ -294,7 +286,6 @@ describe('Vertex Shader Math (Section 2.3)', () => {
     });
 
     it('z never becomes negative', () => {
-      const curlAxisX = 0.5;
       const radius = 0.15;
 
       for (let progress = 0; progress <= 1.0; progress += 0.05) {

@@ -406,7 +406,6 @@ describe('PageGeometry - Cylinder-Curl Displacement (Section 2)', () => {
       applyCurlDisplacement(geometry, curlAxisX, radius);
 
       const positions = geometry.getAttribute('position') as THREE.BufferAttribute;
-      const maxD = Math.PI * radius;
 
       for (let i = 0; i < positions.count; i++) {
         const x = positions.getX(i);

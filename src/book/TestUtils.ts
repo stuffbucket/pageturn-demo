@@ -112,8 +112,8 @@ export function measureCurlWidth(
  */
 export function measureDeformation(
   geometry: THREE.BufferGeometry,
-  curlAxisX: number,
-  radius: number
+  _curlAxisX: number,
+  _radius: number
 ): {
   averageDistance: number;
   maxDistance: number;

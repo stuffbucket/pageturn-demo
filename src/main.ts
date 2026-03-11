@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css'
 import { Book } from './book/Book';
+import { getVimeoVideo } from './textures/atlas';
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -14,6 +15,9 @@ const DRAG_COEFF = 6.5;  // velocity damping (air resistance)
 // Tilt the book so the top leans away from the viewer, giving the natural
 // "book lying on a desk" perspective where the bottom edge is the near edge.
 const BOOK_TILT = 0.76; // radians (~44°)
+
+// Spread index where the Vimeo video plays (j=4 → p8/p9).
+const VIDEO_SPREAD = 4;
 
 class PageTurnDemo {
   private scene: THREE.Scene;
@@ -26,7 +30,6 @@ class PageTurnDemo {
   private timedAnimating = false;
   private timedProgress  = 0;
   private timedDuration  = 1.2; // seconds
-  private timedReverse   = false;
 
   // ── Drag animation ────────────────────────────────────────────────────────
   private dragging       = false;
@@ -50,9 +53,26 @@ class PageTurnDemo {
   private fps           = 0;
   private lastFpsUpdate = Date.now();
 
+  // ── Vimeo video (rendered into page textures via atlas.ts) ──────────────
+  private vimeoVideo: HTMLVideoElement | null = null;
+  private vimeoVisible = false;
+  private vimeoFirstPlay = true;
+  private videoCreditEl: HTMLAnchorElement;
+  private videoCreditTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Camera animation (synced with video playback) ─────────────────────
+  private cameraMode: 'idle' | 'video-driven' | 'returning' = 'idle';
+  private cameraOrigPos = new THREE.Vector3();
+  private cameraOrigTarget = new THREE.Vector3();
+  private cameraFillPos = new THREE.Vector3();
+  private cameraFillTarget = new THREE.Vector3();
+  private cameraReturnStart = new THREE.Vector3();
+  private cameraReturnTargetStart = new THREE.Vector3();
+  private cameraReturnProgress = 0;
+
   constructor() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x2d2d44);
+    this.scene.background = new THREE.Color(0x12111f);
 
     const canvas = document.getElementById('canvas-container');
     if (!canvas) throw new Error('Canvas container not found');
@@ -69,6 +89,7 @@ class PageTurnDemo {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.localClippingEnabled = true;
     canvas.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -76,26 +97,55 @@ class PageTurnDemo {
     this.controls.dampingFactor  = 0.08;
     this.controls.minDistance    = 1.5;
     this.controls.maxDistance    = 8;
+    // Constrain polar angle so the camera stays between ~11° from directly
+    // overhead and just past the horizon (≈5° below).  The book tilts at
+    // BOOK_TILT ≈ 44°, so 1.65 rad lets the user look almost edge-on
+    // without going underneath the desk surface.
+    this.controls.minPolarAngle  = 0.2;
+    this.controls.maxPolarAngle  = 1.65;
     this.controls.target.set(0, 0, 0);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.9);
     dirLight.position.set(5, 5, 8);
     dirLight.castShadow = true;
     this.scene.add(dirLight);
 
+    // Dark desk surface beneath the book
+    const deskGeo = new THREE.PlaneGeometry(20, 20);
+    const deskMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1820, roughness: 0.75, metalness: 0.1,
+    });
+    const desk = new THREE.Mesh(deskGeo, deskMat);
+    desk.rotation.x = -Math.PI / 2;
+    desk.position.y = -0.55;
+    desk.receiveShadow = true;
+    this.scene.add(desk);
+
     this.book = new Book({
-      numLeaves: 3,
+      numLeaves: 6,
       pageWidth: 1.0,
       pageHeight: 1.4,
       curlRadius: 0.15,
-      textureSize: 512,
+      textureSize: 1024,
     });
     this.dragPageWidth = this.book.getPageWidth();
     this.scene.add(this.book.getGroup());
     // Tilt the book group so the top leans away — bottom becomes the near edge
     this.book.getGroup().rotation.x = -BOOK_TILT;
+
+    // Vimeo video element: created by atlas.ts, available after Book construction.
+    this.vimeoVideo = getVimeoVideo();
+
+    // Credit link — hidden by default, fades in after 3 s on video spread.
+    this.videoCreditEl = document.createElement('a');
+    this.videoCreditEl.id = 'video-credit';
+    this.videoCreditEl.href = 'https://myshli.com/project/freight-rail';
+    this.videoCreditEl.target = '_blank';
+    this.videoCreditEl.rel = 'noopener noreferrer';
+    this.videoCreditEl.textContent = 'myshli.com/project/freight-rail';
+    canvas.appendChild(this.videoCreditEl);
 
     this.setupEventHandlers();
     this.animate();
@@ -126,8 +176,12 @@ class PageTurnDemo {
     nextBtn?.addEventListener('click', () => this.turnNext(false));
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft')  this.turnNext(true);
-      if (e.key === 'ArrowRight') this.turnNext(false);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.turnNext(e.key === 'ArrowLeft');
+      } else if (e.key === 'h' || e.key === 'H') {
+        document.getElementById('ui-overlay')?.classList.toggle('visible');
+      }
     });
 
     const el = this.renderer.domElement;
@@ -138,9 +192,11 @@ class PageTurnDemo {
     el.addEventListener('pointermove', (e) => this.onPointerMove(e));
     el.addEventListener('pointerup',   (e) => this.onPointerUp(e));
     el.addEventListener('pointercancel', () => this.onPointerCancel());
+    el.addEventListener('lostpointercapture', () => this.onLostCapture());
   }
 
   private onPointerDown(e: PointerEvent): void {
+    if (e.button !== 0) return;  // primary button only
     if (this.timedAnimating || this.dragging || this.settling) return;
 
     const wx = this.pointerWorldX(e.clientX, e.clientY);
@@ -161,6 +217,7 @@ class PageTurnDemo {
 
     if (!started) return;
 
+    this.fadeOutCredit();
     e.stopImmediatePropagation(); // prevent OrbitControls from entering drag state
     this.dragging     = true;
     this.dragProgress = 0;
@@ -203,6 +260,7 @@ class PageTurnDemo {
   private onPointerUp(e: PointerEvent): void {
     if (!this.dragging) return;
     this.dragging = false;
+    this.controls.enabled = true;
     this.renderer.domElement.releasePointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'default';
     this.beginSettle(this.dragProgress >= 0.5 ? 1 : 0);
@@ -211,6 +269,16 @@ class PageTurnDemo {
   private onPointerCancel(): void {
     if (!this.dragging) return;
     this.dragging = false;
+    this.controls.enabled = true;
+    this.renderer.domElement.style.cursor = 'default';
+    this.beginSettle(0);
+  }
+
+  /** Safety net: if pointer capture is lost unexpectedly, restore controls. */
+  private onLostCapture(): void {
+    if (!this.dragging) return;
+    this.dragging = false;
+    this.controls.enabled = true;
     this.renderer.domElement.style.cursor = 'default';
     this.beginSettle(0);
   }
@@ -238,9 +306,9 @@ class PageTurnDemo {
       : (state.canTurnForward()   && this.book.startTurn());
     if (!started) return;
 
+    this.fadeOutCredit();
     this.timedAnimating = true;
     this.timedProgress  = 0;
-    this.timedReverse   = reverse;
   }
 
   // ── UI ─────────────────────────────────────────────────────────────────────
@@ -278,6 +346,7 @@ class PageTurnDemo {
         this.book.completeTurn();
         this.timedAnimating = false;
         this.controls.enabled = true;
+        this.checkVideoSpread();
         this.updateUI();
       } else {
         this.book.updateTurningPage(this.timedProgress);
@@ -304,6 +373,7 @@ class PageTurnDemo {
         } else {
           this.book.cancelTurn();
         }
+        this.checkVideoSpread();
         this.updateUI();
       }
     }
@@ -318,9 +388,178 @@ class PageTurnDemo {
       this.updateUI();
     }
 
-    this.controls.update();
+    // Camera animation for video spread
+    this.updateCameraAnimation(dt);
+
+    if (this.cameraMode === 'idle') {
+      this.controls.update();
+    }
+
+    this.book.update(dt);
     this.renderer.render(this.scene, this.camera);
   };
+
+  // ── Vimeo video overlay ─────────────────────────────────────────────────────
+
+  /** Show or hide the Vimeo overlay based on current spread. */
+  private checkVideoSpread(): void {
+    const j = this.book.getState().getStateIndex();
+    if (j === VIDEO_SPREAD && !this.book.getState().getIsTurning()) {
+      this.showVimeo();
+      // Re-schedule the credit fade-in after the page settles.
+      this.fadeOutCredit();
+      this.videoCreditTimer = setTimeout(() => {
+        if (this.vimeoVisible) this.videoCreditEl.style.opacity = '1';
+      }, 3000);
+    } else if (this.vimeoVisible && j !== VIDEO_SPREAD) {
+      this.hideVimeo();
+    }
+  }
+
+  /** Cancel any pending credit fade-in and hide it immediately. */
+  private fadeOutCredit(): void {
+    if (this.videoCreditTimer) { clearTimeout(this.videoCreditTimer); this.videoCreditTimer = null; }
+    this.videoCreditEl.style.opacity = '0';
+  }
+
+  private showVimeo(): void {
+    if (this.vimeoVisible || !this.vimeoVideo) return;
+    this.vimeoVisible = true;
+
+    // Store the current camera pose so we can return to it.
+    this.cameraOrigPos.copy(this.camera.position);
+    this.cameraOrigTarget.copy(this.controls.target);
+    this.computeCameraFillPosition();
+    this.cameraMode = 'video-driven';
+    this.controls.enabled = false;
+
+    // Fade in credit link after a 3 s delay.
+    if (this.videoCreditTimer) clearTimeout(this.videoCreditTimer);
+    this.videoCreditTimer = setTimeout(() => {
+      if (this.vimeoVisible) this.videoCreditEl.style.opacity = '1';
+    }, 3000);
+
+    const video = this.vimeoVideo;
+    video.currentTime = 0;
+    if (this.vimeoFirstPlay) {
+      this.vimeoFirstPlay = false;
+      video.muted = false;
+      video.volume = 1;
+    } else {
+      video.muted = true;
+    }
+    video.addEventListener('ended', this.onVideoEnded);
+    video.play().catch(() => {
+      // Autoplay with sound blocked — retry muted.
+      video.muted = true;
+      video.play().catch(() => {});
+    });
+  }
+
+  private hideVimeo(): void {
+    if (!this.vimeoVisible) return;
+    this.vimeoVisible = false;
+
+    if (this.vimeoVideo) {
+      this.vimeoVideo.pause();
+      this.vimeoVideo.muted = true;
+      this.vimeoVideo.removeEventListener('ended', this.onVideoEnded);
+    }
+
+    this.fadeOutCredit();
+
+    // Begin a quick camera return if mid-animation.
+    if (this.cameraMode !== 'idle') {
+      this.cameraReturnStart.copy(this.camera.position);
+      this.cameraReturnTargetStart.copy(this.controls.target);
+      this.cameraReturnProgress = 0;
+      this.cameraMode = 'returning';
+    }
+  }
+
+  /** Video finished naturally — snap camera home. */
+  private onVideoEnded = () => {
+    if (this.cameraMode === 'video-driven') {
+      this.camera.position.copy(this.cameraOrigPos);
+      this.controls.target.copy(this.cameraOrigTarget);
+      this.camera.lookAt(this.controls.target);
+      this.cameraMode = 'idle';
+      this.controls.enabled = true;
+    }
+    if (this.vimeoVideo) {
+      this.vimeoVideo.removeEventListener('ended', this.onVideoEnded);
+    }
+  };
+
+  /** Compute the camera position that fills the viewport with the spread. */
+  private computeCameraFillPosition(): void {
+    const pw = this.book.getPageWidth();
+    const ph = this.book.getPageHeight();
+    const aspect = this.camera.aspect;
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
+
+    // Distance so the spread fits vertically or horizontally (whichever is tighter).
+    const distV = (ph / 2) / Math.tan(halfFov);
+    const distH = pw / (Math.tan(halfFov) * aspect); // half-spread width = pw
+    const dist = Math.max(distV, distH) * 1.05; // 5% margin
+
+    const group = this.book.getGroup();
+    group.updateMatrixWorld(true);
+
+    // Spread center in world space.
+    this.cameraFillTarget.set(0, 0, 0).applyMatrix4(group.matrixWorld);
+
+    // Normal of the spread surface in world space.
+    const normal = new THREE.Vector3(0, 0, 1);
+    normal.transformDirection(group.matrixWorld);
+
+    this.cameraFillPos.copy(this.cameraFillTarget).addScaledVector(normal, dist);
+  }
+
+  /** Drives camera position each frame based on video elapsed time. */
+  private updateCameraAnimation(dt: number): void {
+    if (this.cameraMode === 'video-driven') {
+      const video = this.vimeoVideo;
+      if (!video) return;
+      const elapsed = video.currentTime;
+      const dur = (video.duration && isFinite(video.duration)) ? video.duration : 30;
+      let factor: number;
+
+      if (elapsed <= 3) {
+        // Ease-out cubic into the fill position over 0–3 s.
+        const p = Math.min(1, elapsed / 3);
+        factor = 1 - Math.pow(1 - p, 3);
+      } else if (dur <= 22 || elapsed < 22) {
+        factor = 1;
+      } else {
+        // Ease-in-out cubic back to the original position from 22 s to end.
+        const p = Math.min(1, (elapsed - 22) / (dur - 22));
+        const ease = p < 0.5
+          ? 4 * p * p * p
+          : 1 - Math.pow(-2 * p + 2, 3) / 2;
+        factor = 1 - ease;
+      }
+
+      this.camera.position.lerpVectors(this.cameraOrigPos, this.cameraFillPos, factor);
+      this.controls.target.lerpVectors(this.cameraOrigTarget, this.cameraFillTarget, factor);
+      this.camera.lookAt(this.controls.target);
+    } else if (this.cameraMode === 'returning') {
+      this.cameraReturnProgress += dt / 0.5; // 0.5 s return
+      if (this.cameraReturnProgress >= 1) {
+        this.camera.position.copy(this.cameraOrigPos);
+        this.controls.target.copy(this.cameraOrigTarget);
+        this.cameraMode = 'idle';
+        if (!this.dragging && !this.settling && !this.timedAnimating) {
+          this.controls.enabled = true;
+        }
+      } else {
+        const e = 1 - Math.pow(1 - this.cameraReturnProgress, 3); // ease-out cubic
+        this.camera.position.lerpVectors(this.cameraReturnStart, this.cameraOrigPos, e);
+        this.controls.target.lerpVectors(this.cameraReturnTargetStart, this.cameraOrigTarget, e);
+      }
+      this.camera.lookAt(this.controls.target);
+    }
+  }
 
   private onWindowResize(): void {
     const width  = window.innerWidth;
@@ -328,6 +567,7 @@ class PageTurnDemo {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    if (this.cameraMode === 'video-driven') this.computeCameraFillPosition();
   }
 }
 

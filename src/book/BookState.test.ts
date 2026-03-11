@@ -232,9 +232,6 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
     });
 
     it('content is continuous across state machine', () => {
-      // Traverse and verify no gaps or invalid combinations
-      const seenCombos = new Set<string>();
-      
       let steps = 0;
       while (book.canTurnForward() && steps < 100) {
         const before = book.getVisibleContent();

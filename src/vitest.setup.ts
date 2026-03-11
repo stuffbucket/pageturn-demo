@@ -57,12 +57,11 @@ if (typeof HTMLCanvasElement !== 'undefined') {
   HTMLCanvasElement.prototype.getContext = function (
     this: HTMLCanvasElement,
     contextId: string,
-    options?: any
   ): any {
     if (contextId === '2d') {
       return mockContext2D;
     }
-    return originalGetContext.call(this, contextId, options);
+    return originalGetContext.call(this, contextId as 'webgpu');
   };
 }
 

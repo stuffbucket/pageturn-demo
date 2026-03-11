@@ -1,0 +1,266 @@
+---
+import Base from '../layouts/Base.astro';
+import Math from '../components/Math.astro';
+---
+
+<Base title="Page Turn — Architecture" active="Architecture" description="Module structure and design patterns.">
+
+  <h1>Architecture</h1>
+  <p class="subtitle">How the modules fit together, and the patterns that keep them simple.</p>
+
+  <h2>Module map</h2>
+
+  <pre><code>src/
+  main.ts              Scene, camera, controls, drag + settle loop
+  book/
+    BookState.ts       Pure state machine (no Three.js dependency)
+    Book.ts            Mesh orchestrator, inline GLSL shaders
+    PageGeometry.ts    Geometry helpers (segment count, dimensions)
+    PageMaterial.ts    Material factory (unused in current build)
+    ShaderMath.ts      Shared math utilities
+  textures/
+    atlas.ts           Procedural Canvas 2D texture generation
+  shaders/
+    page.vert          Reference vertex shader (unused — inlined)
+    page.frag          Reference fragment shader (unused — inlined)</code></pre>
+
+  <p>
+    The codebase is small on purpose. Each module owns one concern and
+    communicates through narrow interfaces.
+  </p>
+
+  <h2>State machine (<code>BookState</code>)</h2>
+
+  <p>
+    <code>BookState</code> is a pure TypeScript class with no rendering
+    dependency. It owns two values:
+  </p>
+
+  <dl class="def-grid">
+    <dt><Math expr="j" /></dt>
+    <dd>Discrete spread index — which pair of pages is visible</dd>
+    <dt><Math expr="\varphi" /></dt>
+    <dd>Continuous rotation angle during a turn</dd>
+  </dl>
+
+  <p>
+    The legal transitions form a simple linear chain:
+  </p>
+
+  <Math
+    expr="j \in \{-1,\; 0,\; 1,\; \ldots,\; n,\; n{+}1\}"
+    display={true}
+  />
+
+  <p>
+    Forward turns increment <Math expr="j" /> on completion; reverse turns
+    decrement <Math expr="j" /> immediately (so the destination spread is
+    shown under the turning page) and animate
+    <Math expr="\varphi" /> from <Math expr="\pi \to 0" />.
+  </p>
+
+  <p>
+    All mutation goes through four methods:
+    <code>startTurn()</code>, <code>startReverseTurn()</code>,
+    <code>setTurningProgress()</code>, and <code>cancelTurn()</code>.
+    Nothing outside <code>BookState</code> writes to
+    <Math expr="j" /> or <Math expr="\varphi" /> directly.
+  </p>
+
+  <h2>Mesh orchestrator (<code>Book</code>)</h2>
+
+  <p>
+    <code>Book</code> translates state into geometry. At rest, two meshes
+    exist:
+  </p>
+
+  <dl class="def-grid">
+    <dt><code>leftMesh</code></dt>
+    <dd>The left half of the current spread (<Math expr="x \in [-w, 0]" />)</dd>
+    <dt><code>rightMesh</code></dt>
+    <dd>The right half (<Math expr="x \in [0, w]" />)</dd>
+  </dl>
+
+  <p>
+    When a turn begins, a third mesh — <code>turningPageMesh</code> — is
+    spawned with a <code>ShaderMaterial</code> that performs the per-vertex
+    bend. When the turn ends, the mesh is removed from the scene and the two
+    spread meshes are updated to reflect the new resting state. This
+    spawn/destroy cycle means the scene never carries hidden page geometry.
+  </p>
+
+  <h3>Texture routing</h3>
+
+  <p>
+    The turning page needs both a front and back texture. The orchestrator
+    resolves these from the atlas map before spawning the flip mesh:
+  </p>
+
+  <ul>
+    <li>
+      <strong>Forward turn:</strong> front = right page of current spread,
+      back = left page of next spread.
+    </li>
+    <li>
+      <strong>Reverse turn:</strong> front = right page of previous spread (now current),
+      back = left page of the spread being left.
+    </li>
+  </ul>
+
+  <p>
+    The fragment shader uses <code>gl_FrontFacing</code> to switch between
+    front and back textures, mirroring the U coordinate on the back face so
+    text reads correctly.
+  </p>
+
+  <h3>Crease shadow</h3>
+
+  <p>
+    A hair-thin strip sits at the spine. Its opacity tracks turn progress:
+  </p>
+
+  <Math
+    expr="\alpha = \sin(\pi\, p)"
+    display={true}
+  />
+
+  <p>
+    Peak darkness at mid-turn (<Math expr="p = 0.5" />), invisible at rest.
+    The strip itself uses a tight Gaussian <Math expr="e^{-80d^2}" /> so the
+    shadow never looks wider than a printed spine crease.
+  </p>
+
+  <h2>Vertex shader pipeline</h2>
+
+  <p>
+    The flip mesh has 64 width segments. The vertex shader runs the bend
+    calculation per-vertex:
+  </p>
+
+  <ol>
+    <li>
+      Compute normalized distance from spine:
+      <Math expr="t = x / w" />
+    </li>
+    <li>
+      Add the gravity-driven curl offset:
+      <Math expr="\phi(t) = \varphi + A \cdot t \cdot \sin(2\varphi)" />
+    </li>
+    <li>
+      Rotate in the XZ plane:
+      <Math expr="x' = x\cos\phi,\quad z' = -x\sin\phi" />
+    </li>
+  </ol>
+
+  <p>
+    Because all bending happens in the shader, the JavaScript side only sets
+    three uniforms per frame: <code>uAngle</code>, <code>uBendAmount</code>,
+    and <code>uPageWidth</code>. No vertex buffer uploads, no geometry
+    rebuilds.
+  </p>
+
+  <h2>Drag and settle system (<code>main.ts</code>)</h2>
+
+  <p>
+    The interaction model has three mutually exclusive modes:
+  </p>
+
+  <dl class="def-grid">
+    <dt>Timed</dt>
+    <dd>Button or keyboard turn — linear <Math expr="p(t) = t / T" /> over <Math expr="T = 1.2" /> s</dd>
+    <dt>Dragging</dt>
+    <dd>Pointer captured, progress follows mouse X projected onto the book plane</dd>
+    <dt>Settling</dt>
+    <dd>Released drag — physics simulation until <Math expr="p" /> reaches 0 or 1</dd>
+  </dl>
+
+  <h3>Pointer capture protocol</h3>
+
+  <p>
+    The <code>pointerdown</code> handler is registered in <strong>capture
+    phase</strong>. When a drag starts it calls
+    <code>stopImmediatePropagation()</code>, preventing
+    <code>OrbitControls</code> from ever seeing the event. This avoids the
+    class of bugs where the orbit controller enters its own drag state and
+    fights the page turn.
+  </p>
+
+  <p>
+    On release — or if pointer capture is lost unexpectedly (tab switch,
+    browser focus loss) — the <code>lostpointercapture</code> listener
+    re-enables orbit controls and triggers a settle-back to the nearest
+    target.
+  </p>
+
+  <h3>Hit testing</h3>
+
+  <p>
+    A <code>THREE.Plane</code> oriented to match the book tilt intersects
+    the pointer ray to get a world-space X coordinate. Right-half hits
+    (<Math expr="x \geq 0" />) start a forward drag; left-half hits
+    (<Math expr="x < 0" />) start a reverse drag. This replaces mesh
+    raycasting, which would be unreliable against a bending surface.
+  </p>
+
+  <h3>Settle dynamics</h3>
+
+  <p>
+    The settle loop applies constant gravitational acceleration toward the
+    target with linear air resistance:
+  </p>
+
+  <Math
+    expr="\dot{v} = \text{dir} \cdot G - D \cdot v"
+    display={true}
+  />
+
+  <p>
+    Velocity is seeded with the drag momentum but clamped to a minimum of
+    <Math expr="|v_0| \geq 0.8" /> so the page never appears to stall at the
+    midpoint (where the bend envelope is also zero).
+  </p>
+
+  <h2>Texture generation (<code>atlas.ts</code>)</h2>
+
+  <p>
+    All page content is drawn at runtime using the Canvas 2D API. The atlas
+    produces a <code>Map&lt;string, THREE.CanvasTexture&gt;</code> keyed by
+    page identifiers (<code>cover_front_ext</code>, <code>p1</code>,
+    <code>p2</code>, etc.).
+  </p>
+
+  <p>
+    Content types:
+  </p>
+
+  <ul>
+    <li><strong>Covers</strong> — teal gradient with gold typography and decorative rules</li>
+    <li><strong>Endpapers</strong> — marbled pattern with overlapping circles</li>
+    <li><strong>Text pages</strong> — a Robert Frost poem, a Tolkien pull quote, colophon, prose</li>
+    <li><strong>Landscapes</strong> — layered procedural mountain/ocean scenes drawn with gradients and Bezier paths</li>
+    <li><strong>Video spread</strong> — a Big Buck Bunny <code>&lt;video&gt;</code> element split across two <code>CanvasTexture</code>s, updated each frame via <code>drawImage()</code></li>
+  </ul>
+
+  <p>
+    Every texture is generated at the requested size (default 1024 px) and
+    assigned <code>SRGBColorSpace</code> to match Three.js color management.
+  </p>
+
+  <h2>Rendering constants</h2>
+
+  <dl class="def-grid">
+    <dt><code>numLeaves = 6</code></dt>
+    <dd>12 page faces + 4 cover faces = 16 textures</dd>
+    <dt><code>BOOK_TILT = 0.76</code></dt>
+    <dd>~44° rotation so the bottom edge is the near edge</dd>
+    <dt><code>GRAVITY = 5.0</code></dt>
+    <dd>Progress units/s² for settle acceleration</dd>
+    <dt><code>DRAG_COEFF = 6.5</code></dt>
+    <dd>Velocity damping during settle</dd>
+    <dt><code>A = 0.4</code></dt>
+    <dd>Bend amplitude — constrained below 0.5 for monotonicity</dd>
+    <dt><code>T = 1.2 s</code></dt>
+    <dd>Duration of a timed (button/keyboard) page turn</dd>
+  </dl>
+
+</Base>

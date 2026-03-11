@@ -1,0 +1,94 @@
+---
+import Base from '../layouts/Base.astro';
+import Math from '../components/Math.astro';
+---
+
+<Base title="Page Turn — Overview" active="Overview" description="An interactive 3D book built with Three.js, TypeScript, and Vite.">
+
+  <h1>Page Turn</h1>
+  <p class="subtitle">An interactive 3D book with drag-to-turn physics, gravity-based curl, and rich procedural content.</p>
+
+  <h2>What it does</h2>
+
+  <p>
+    This is a WebGL book rendered with Three.js. You can click and drag pages
+    to turn them, and they settle with a gravity + air-resistance physics model.
+    A custom vertex shader bends each page with a
+    <Math expr="\\sin(2\\varphi)" /> curl envelope that simulates how a real
+    page sags under gravity as it turns.
+  </p>
+
+  <p>
+    The book contains procedurally generated content — gradient covers with gold
+    typography, marbled endpapers, a Robert Frost poem, a forest photograph,
+    a Big Buck Bunny video spread, landscape paintings, prose pages, and a
+    colophon. The spine shadows, page curls, and video textures all update in
+    real time.
+  </p>
+
+  <h2>Controls</h2>
+
+  <ul>
+    <li><strong>Drag</strong> — click and drag on any page to turn it. Release and the page settles to its target.</li>
+    <li><strong>Arrow keys</strong> — left/right to flip pages with a timed animation.</li>
+    <li><strong>Prev / Next buttons</strong> — in the on-screen UI panel.</li>
+    <li><strong>Orbit</strong> — right-drag or two-finger drag to rotate the camera around the book.</li>
+    <li><strong>Zoom</strong> — scroll wheel or pinch.</li>
+  </ul>
+
+  <h2>Running</h2>
+
+  <pre><code>npm install
+npm run dev        # dev server at localhost:5173
+npm run build      # production build</code></pre>
+
+  <h2>Design goals</h2>
+
+  <p>
+    The project explores a few ideas in interactive 3D rendering:
+  </p>
+
+  <ul>
+    <li>
+      <strong>Minimal mesh management</strong> — only two static spread meshes
+      exist at rest. A third mesh is spawned on-demand during a turn and
+      destroyed when it completes. No page-stack of hidden geometry.
+    </li>
+    <li>
+      <strong>Physics from a single scalar</strong> — all page motion is controlled
+      by a single progress value <Math expr="p \in [0,1]" />. The vertex shader
+      derives the full 3D bend from <Math expr="p" /> alone.
+    </li>
+    <li>
+      <strong>Pointer capture for drag fidelity</strong> — the drag system uses
+      the Pointer Capture API in capture phase to prevent OrbitControls from
+      hijacking the gesture.
+    </li>
+    <li>
+      <strong>Procedural content</strong> — all textures are generated at runtime
+      from Canvas 2D calls, with one video element split across two canvas
+      textures for the full-bleed spread.
+    </li>
+  </ul>
+
+  <h2>Key equation</h2>
+
+  <p>
+    Each vertex at normalized distance <Math expr="t" /> from the spine
+    rotates by:
+  </p>
+
+  <Math
+    expr="\\phi(t) = \\varphi_{\\text{spine}} + A \\cdot t \\cdot \\sin(2\\varphi_{\\text{spine}})"
+    display={true}
+  />
+
+  <p>
+    where <Math expr="A = 0.4" /> is the bend amplitude. The
+    <Math expr="\\sin(2\\varphi)" /> envelope naturally produces the right curl
+    direction through the full turn arc. See the
+    <a href="/pageturn-demo/equations/">equations page</a> for the full
+    derivation and constraints.
+  </p>
+
+</Base>

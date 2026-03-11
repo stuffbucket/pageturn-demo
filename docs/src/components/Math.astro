@@ -1,0 +1,29 @@
+---
+import katex from 'katex';
+
+interface Props {
+  expr: string;
+  display?: boolean;
+  label?: string;
+}
+
+const { expr, display = false, label } = Astro.props;
+const html = katex.renderToString(expr, {
+  displayMode: display,
+  throwOnError: false,
+  strict: false,
+});
+---
+
+{display ? (
+  label ? (
+    <div class="equation">
+      <span class="katex-display" set:html={html} />
+      <span class="eq-label">({label})</span>
+    </div>
+  ) : (
+    <div class="math-block" set:html={html} />
+  )
+) : (
+  <span class="math-inline" set:html={html} />
+)}

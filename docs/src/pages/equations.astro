@@ -1,0 +1,256 @@
+---
+import Base from '../layouts/Base.astro';
+import Math from '../components/Math.astro';
+---
+
+<Base title="Page Turn — Equations" active="Equations" description="Mathematical model for page curl physics.">
+
+  <h1>Equations</h1>
+  <p class="subtitle">The mathematical model governing page turn geometry and settle dynamics.</p>
+
+  <h2>1. State machine</h2>
+
+  <p>
+    The book's discrete state is an index
+    <Math expr="j \in \{-1,\, 0,\, 1,\, \ldots,\, n,\, n{+}1\}" />, where
+    <Math expr="n" /> is the number of leaves. Each value of
+    <Math expr="j" /> corresponds to a visible spread:
+  </p>
+
+  <dl class="def-grid">
+    <dt><Math expr="j = -1" /></dt>
+    <dd>Front cover closed</dd>
+    <dt><Math expr="j = 0" /></dt>
+    <dd>First interior spread (front endpaper + page 1)</dd>
+    <dt><Math expr="j = k" /></dt>
+    <dd>Spread <Math expr="k" />: pages <Math expr="2k" /> and <Math expr="2k{+}1" /></dd>
+    <dt><Math expr="j = n" /></dt>
+    <dd>Last interior spread (page <Math expr="2n" /> + back endpaper)</dd>
+    <dt><Math expr="j = n{+}1" /></dt>
+    <dd>Back cover closed</dd>
+  </dl>
+
+  <p>
+    During a turn, a continuous progress scalar
+    <Math expr="p \in [0,1]" /> drives the animation. A forward turn increments
+    <Math expr="j" /> when <Math expr="p" /> reaches 1; a reverse turn decrements
+    <Math expr="j" /> immediately and animates <Math expr="p" /> from 0 to 1
+    (with the angle running in reverse).
+  </p>
+
+  <h2>2. Spine angle</h2>
+
+  <p>
+    Progress maps to the spine's rotation angle about the Y-axis:
+  </p>
+
+  <Math
+    expr="\\varphi(p) = \\begin{cases} -\\pi\\, p & \\text{forward turn} \\\\ -\\pi\\,(1 - p) & \\text{reverse turn} \\end{cases}"
+    display={true}
+    label="1"
+  />
+
+  <p>
+    The spine sweeps from <Math expr="0" /> (page flat on right) through
+    <Math expr="-\\pi/2" /> (vertical) to <Math expr="-\\pi" /> (flat on left).
+  </p>
+
+  <h2>3. Per-vertex curl</h2>
+
+  <p>
+    The page mesh has 64 segments along its width. Each vertex is parameterized
+    by its normalized distance from the spine:
+  </p>
+
+  <Math
+    expr="t = \\frac{x}{w}, \\quad t \\in [0,\\, 1]"
+    display={true}
+  />
+
+  <p>
+    where <Math expr="x" /> is the vertex's rest position and <Math expr="w" />
+    is the page width. The per-vertex rotation angle is:
+  </p>
+
+  <Math
+    expr="\\phi(t) = \\varphi + A \\cdot t \\cdot \\sin(2\\varphi)"
+    display={true}
+    label="2"
+  />
+
+  <p>
+    where <Math expr="A = 0.4" /> is the bend amplitude. The vertex is then
+    displaced in the XZ plane:
+  </p>
+
+  <Math
+    expr="x' = x\\cos\\phi, \\quad z' = -x\\sin\\phi"
+    display={true}
+    label="3"
+  />
+
+  <h3>Why <Math expr="\\sin(2\\varphi)" />?</h3>
+
+  <p>
+    The <Math expr="\\sin(2\\varphi)" /> envelope controls how the free edge
+    deviates from the spine angle. Its sign matches the direction gravity
+    would pull a flexible sheet:
+  </p>
+
+  <ul>
+    <li>
+      <strong>Lift phase</strong> (<Math expr="\\varphi \\in (0, -\\pi/2)" />):
+      <Math expr="\\sin(2\\varphi) < 0" />, so the edge angle is more negative
+      than the spine — the edge leads, sagging toward the right surface.
+    </li>
+    <li>
+      <strong>Vertical</strong> (<Math expr="\\varphi = -\\pi/2" />):
+      <Math expr="\\sin(2\\varphi) = 0" /> — no correction, the page is
+      momentarily straight.
+    </li>
+    <li>
+      <strong>Fall phase</strong> (<Math expr="\\varphi \\in (-\\pi/2, -\\pi)" />):
+      <Math expr="\\sin(2\\varphi) > 0" />, so the edge angle is less negative
+      — the edge lags, sagging toward the left surface.
+    </li>
+  </ul>
+
+  <p>
+    Together, the page traces a <Math expr="(" /> shape during the lift and a
+    <Math expr=")" /> shape during the fall — matching real paper.
+  </p>
+
+  <h3>Monotonicity constraint</h3>
+
+  <p>
+    The edge must never reverse direction (no "wagging"). The derivative of the
+    edge angle with respect to the spine angle is:
+  </p>
+
+  <Math
+    expr="\\frac{d\\phi_{\\text{edge}}}{d\\varphi} = 1 + 2A\\cos(2\\varphi)"
+    display={true}
+    label="4"
+  />
+
+  <p>
+    This is minimized when <Math expr="\\cos(2\\varphi) = -1" />, giving a
+    minimum velocity of <Math expr="1 - 2A" />. The constraint is:
+  </p>
+
+  <Math
+    expr="A < \\tfrac{1}{2} \\implies 1 - 2A > 0"
+    display={true}
+  />
+
+  <p>
+    With <Math expr="A = 0.4" />, the minimum edge velocity is
+    <Math expr="0.2 > 0" /> — no stall, no reversal.
+  </p>
+
+  <h2>4. Physics settle</h2>
+
+  <p>
+    When the user releases a drag, the progress value <Math expr="p" /> is
+    governed by a damped gravity model. Each frame:
+  </p>
+
+  <Math
+    expr="\\dot{v} = \\text{dir} \\cdot G - D \\cdot v"
+    display={true}
+    label="5"
+  />
+
+  <Math
+    expr="p_{n+1} = \\operatorname{clamp}\\!\\left(p_n + v \\cdot \\Delta t,\\; 0,\\; 1\\right)"
+    display={true}
+    label="6"
+  />
+
+  <p>
+    where:
+  </p>
+
+  <dl class="def-grid">
+    <dt><Math expr="G = 5.0" /></dt>
+    <dd>Gravitational acceleration (progress units/s²)</dd>
+    <dt><Math expr="D = 6.5" /></dt>
+    <dd>Drag coefficient (velocity damping)</dd>
+    <dt><Math expr="\\text{dir}" /></dt>
+    <dd><Math expr="+1" /> if settling forward, <Math expr="-1" /> if settling back</dd>
+    <dt><Math expr="\\Delta t" /></dt>
+    <dd>Frame timestep (<Math expr="1/60" /> s)</dd>
+  </dl>
+
+  <p>
+    The settle target is chosen by threshold: if the drag ended past
+    <Math expr="p \\geq 0.5" />, the page completes; otherwise it snaps back.
+    Velocity is seeded with the drag momentum but clamped to a minimum of
+    <Math expr="|v_0| \\geq 0.8" /> to prevent the page from stalling at the
+    midpoint (where the bend envelope is also zero).
+  </p>
+
+  <h2>5. Timed animation</h2>
+
+  <p>
+    Button and keyboard turns use linear progress over a fixed duration:
+  </p>
+
+  <Math
+    expr="p(t) = \\frac{t}{T}, \\quad T = 1.2\\text{ s}"
+    display={true}
+    label="7"
+  />
+
+  <h2>6. Crease shadow</h2>
+
+  <p>
+    A thin line at the spine fades in during a turn. Its opacity follows a
+    bell curve peaking at mid-turn:
+  </p>
+
+  <Math
+    expr="\\alpha_{\\text{crease}} = \\sin(\\pi\\, p)"
+    display={true}
+    label="8"
+  />
+
+  <p>
+    The line itself is a tight Gaussian across the strip width:
+  </p>
+
+  <Math
+    expr="\\text{shadow}(d) = e^{-80\\, d^2}"
+    display={true}
+  />
+
+  <p>
+    where <Math expr="d \\in [0,1]" /> is the normalized distance from the
+    strip center.
+  </p>
+
+  <h2>7. GLSL implementation</h2>
+
+  <p>
+    The vertex shader implements equations (2) and (3) directly:
+  </p>
+
+<pre><code>float t = pos.x / uPageWidth;
+float phi = uAngle + uBendAmount * t * sin(2.0 * uAngle);
+
+float origX = pos.x;
+pos.x =  origX * cos(phi);
+pos.z = -origX * sin(phi);</code></pre>
+
+  <p>
+    The fragment shader uses <code>gl_FrontFacing</code> to select between the
+    front and back textures, mirroring the U coordinate for the back face:
+  </p>
+
+<pre><code>if (gl_FrontFacing) &#123;
+  gl_FragColor = texture2D(frontTexture, vUv);
+&#125; else &#123;
+  gl_FragColor = texture2D(backTexture, vec2(1.0 - vUv.x, vUv.y));
+&#125;</code></pre>
+
+</Base>

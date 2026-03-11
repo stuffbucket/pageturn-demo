@@ -1,0 +1,286 @@
+/* ── Reset & Base ────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+:root {
+  --font-body: 'Source Serif 4', 'Georgia', serif;
+  --font-heading: 'Inter', 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --color-bg: #fafaf8;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #555;
+  --color-accent: #2a5a8a;
+  --color-rule: #d4d0c8;
+  --color-code-bg: #f0eeea;
+  --color-nav-bg: #f5f4f0;
+
+  --measure: 38rem;
+  --space-xs: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1.5rem;
+  --space-l: 3rem;
+  --space-xl: 5rem;
+}
+
+html {
+  font-size: 18px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* ── Typography ─────────────────────────────────────────────────── */
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 2.2rem;
+  margin-bottom: var(--space-m);
+}
+
+h2 {
+  font-size: 1.5rem;
+  margin-top: var(--space-xl);
+  margin-bottom: var(--space-m);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+h3 {
+  font-size: 1.15rem;
+  margin-top: var(--space-l);
+  margin-bottom: var(--space-s);
+}
+
+p {
+  margin-bottom: var(--space-m);
+  max-width: var(--measure);
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+a:hover {
+  border-bottom-color: var(--color-accent);
+}
+
+blockquote {
+  margin: var(--space-m) 0;
+  padding-left: var(--space-m);
+  border-left: 3px solid var(--color-rule);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  max-width: var(--measure);
+}
+
+ul, ol {
+  margin-bottom: var(--space-m);
+  padding-left: 1.4em;
+  max-width: var(--measure);
+}
+
+li {
+  margin-bottom: var(--space-xs);
+}
+
+li + li {
+  margin-top: var(--space-s);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--color-rule);
+  margin: var(--space-l) 0;
+}
+
+/* ── Code ───────────────────────────────────────────────────────── */
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--color-code-bg);
+  padding: var(--space-m);
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: var(--space-m);
+  line-height: 1.5;
+  max-width: 100%;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.82rem;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+
+.site-header {
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-nav-bg);
+}
+
+.site-header-inner {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-m) var(--space-m);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-m);
+  flex-wrap: wrap;
+}
+
+.site-title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.02em;
+}
+.site-title:hover {
+  border-bottom-color: transparent;
+}
+
+nav {
+  display: flex;
+  gap: var(--space-m);
+}
+
+nav a {
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+nav a:hover,
+nav a.active {
+  color: var(--color-text);
+}
+
+.content {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-m) var(--space-xl);
+}
+
+.subtitle {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-top: calc(-1 * var(--space-s));
+  margin-bottom: var(--space-l);
+  max-width: var(--measure);
+}
+
+/* ── Math (KaTeX) ───────────────────────────────────────────────── */
+
+.math-block {
+  margin: var(--space-m) 0;
+  padding: var(--space-m) var(--space-m);
+  background: var(--color-code-bg);
+  border-radius: 6px;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.math-inline .katex {
+  font-size: 1.05em;
+}
+
+.math-block .katex {
+  font-size: 1.15em;
+}
+
+/* ── Equation labels ────────────────────────────────────────────── */
+
+.equation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-m);
+  margin: var(--space-m) 0;
+  padding: var(--space-m);
+  background: var(--color-code-bg);
+  border-radius: 6px;
+}
+
+.equation .katex-display {
+  margin: 0;
+  flex: 1;
+}
+
+.eq-label {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Definition list style ──────────────────────────────────────── */
+
+.def-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-xs) var(--space-m);
+  margin-bottom: var(--space-m);
+  max-width: var(--measure);
+}
+
+.def-grid dt {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-accent);
+  padding-top: 0.1em;
+}
+
+.def-grid dd {
+  margin: 0;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.site-footer {
+  border-top: 1px solid var(--color-rule);
+  padding: var(--space-l) var(--space-m);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  html { font-size: 16px; }
+  h1 { font-size: 1.8rem; }
+  h2 { font-size: 1.3rem; }
+  .content { padding-top: var(--space-l); }
+}

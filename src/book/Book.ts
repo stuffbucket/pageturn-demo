@@ -70,6 +70,18 @@ const FLIP_FRAG = /* glsl */`
     } else {
       gl_FragColor = texture2D(backTexture, vec2(1.0 - vUv.x, vUv.y));
     }
+    #include <colorspace_fragment>
+  }
+`;
+
+// Crease shadow — a thin vertical line along the spine.
+const CREASE_FRAG = /* glsl */`
+  uniform float uOpacity;
+  varying vec2 vUv;
+  void main() {
+    float d = abs(vUv.x - 0.5) * 2.0;   // 0 at center, 1 at edges
+    float line = exp(-d * d * 80.0);     // tight Gaussian ≈ 1-pixel line
+    gl_FragColor = vec4(0.0, 0.0, 0.0, line * uOpacity * 0.3);
   }
 `;
 
@@ -88,6 +100,21 @@ export class Book {
   // Turning page mesh — exists only during an animation.
   private turningPageMesh: THREE.Mesh | null = null;
   private isReverseTurn = false;
+
+  // Spine crease shadow — fades in/out with page turns.
+  private creaseMesh: THREE.Mesh;
+
+  // Popup diorama — paper mountains that pop up from the page on a specific spread.
+  private popupGroup: THREE.Group | null = null;
+  private readonly POPUP_SPREAD = 4;  // j=4 → p8/p9
+  private popupFoldProgress = 0;       // 0 = flat on page, 1 = fully upright
+  private popupLeavingSpread = false;  // true during a turn away from popup spread
+  private popupArrivingSpread = false; // true during a turn toward the popup spread
+
+  // Clipping plane at the page surface (z=0 in book-group local space,
+  // transformed to world space each frame).  Prevents popup geometry from
+  // rendering below the page.
+  private popupClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
   constructor(params: BookParams) {
     this.numLeaves = params.numLeaves;
@@ -112,7 +139,23 @@ export class Book {
     this.rightMesh.position.z = 0;
     this.group.add(this.rightMesh);
 
+    // Crease shadow strip: 10% of page width, centered on spine
+    const creaseWidth = this.pageWidth * 0.1;
+    const creaseGeo = new THREE.PlaneGeometry(creaseWidth, this.pageHeight);
+    const creaseMat = new THREE.ShaderMaterial({
+      uniforms: { uOpacity: { value: 0 } },
+      vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: CREASE_FRAG,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.FrontSide,
+    });
+    this.creaseMesh = new THREE.Mesh(creaseGeo, creaseMat);
+    this.creaseMesh.position.z = 0.002;
+    this.group.add(this.creaseMesh);
+
     this.syncDisplay();
+    // this.createPopup();  // 3D popup models stubbed out for now
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -144,6 +187,97 @@ export class Book {
     const { left, right } = this.contentAt(this.state.getStateIndex());
     this.applyToMesh(this.leftMesh,  left);
     this.applyToMesh(this.rightMesh, right);
+    if (this.popupGroup) {
+      const atPopup = !this.state.getIsTurning() &&
+        this.state.getStateIndex() === this.POPUP_SPREAD;
+      this.popupArrivingSpread = false;
+      this.popupLeavingSpread = false;
+      if (atPopup) {
+        this.popupGroup.visible = true;
+        this.popupFoldProgress = 1;
+        this.applyPopupFold();
+      } else {
+        this.popupFoldProgress = 0;
+        this.applyPopupFold();
+        this.popupGroup.visible = false;
+      }
+    }
+  }
+
+  /**
+   * Create a paper-craft popup diorama of mountains and trees.
+   * Elements start flat (rotation.x = 0); applyPopupFold() drives them
+   * upright.  Trees and the sun use sub-groups so their elevated parts
+   * pivot correctly around their base on the page.
+   */
+  // @ts-ignore -- stubbed out, kept for future use
+  private createPopup(): void {
+    this.popupGroup = new THREE.Group();
+
+    const paper = (color: number) =>
+      new THREE.MeshBasicMaterial({
+        color,
+        side: THREE.DoubleSide,
+        clippingPlanes: [this.popupClipPlane],
+      });
+
+    // Mountains — ShapeGeometry base at y=0, peak at y=h.
+    // rotation.x driven by applyPopupFold(); no preset rotation.
+    const addMountain = (w: number, h: number, px: number, py: number, color: number) => {
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2, 0);
+      shape.lineTo(0, h);
+      shape.lineTo(w / 2, 0);
+      shape.closePath();
+      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), paper(color));
+      mesh.position.set(px, py, 0);
+      this.popupGroup!.add(mesh);
+    };
+
+    addMountain(1.4, 0.38, 0, 0.15, 0x7a9d8a);      // distant range
+    addMountain(0.9, 0.58, -0.15, 0, 0x3a6d4a);      // main peak
+    addMountain(0.65, 0.45, 0.45, -0.08, 0x4a7d5a);   // side peak
+    addMountain(0.5, 0.26, -0.55, -0.18, 0x5a8d6a);   // foothill
+
+    // Sun — group so y-offset rotates into z when folded up
+    const sunGroup = new THREE.Group();
+    sunGroup.position.set(0.55, 0.2, 0);
+    const sun = new THREE.Mesh(new THREE.CircleGeometry(0.09, 32), paper(0xf5d76e));
+    sun.position.y = 0.5;
+    sunGroup.add(sun);
+    this.popupGroup.add(sunGroup);
+
+    // Trees — each in a group so trunk + canopy pivot together
+    const addTree = (tx: number, ty: number, h: number, foliageColor: number) => {
+      const treeGroup = new THREE.Group();
+      treeGroup.position.set(tx, ty, 0);
+
+      const trunk = new THREE.Mesh(
+        new THREE.PlaneGeometry(h * 0.08, h * 0.35),
+        paper(0x6b4226),
+      );
+      trunk.position.y = h * 0.175;
+      treeGroup.add(trunk);
+
+      const canopyShape = new THREE.Shape();
+      canopyShape.moveTo(-h * 0.2, 0);
+      canopyShape.lineTo(0, h * 0.5);
+      canopyShape.lineTo(h * 0.2, 0);
+      canopyShape.closePath();
+      const canopy = new THREE.Mesh(new THREE.ShapeGeometry(canopyShape), paper(foliageColor));
+      canopy.position.y = h * 0.3;
+      treeGroup.add(canopy);
+
+      this.popupGroup!.add(treeGroup);
+    };
+
+    addTree(-0.72, -0.25, 0.32, 0x2d5a35);
+    addTree(0.68, -0.2, 0.28, 0x3d6a45);
+    addTree(-0.3, -0.3, 0.22, 0x2d5535);
+
+    this.popupGroup.visible = false;
+    this.popupGroup.position.z = 0.003;
+    this.group.add(this.popupGroup);
   }
 
   /** Spawn a flipping-page mesh with per-vertex bending shader. */
@@ -172,6 +306,7 @@ export class Book {
     this.turningPageMesh = new THREE.Mesh(geo, mat);
     this.turningPageMesh.position.z = 0.001;
     this.group.add(this.turningPageMesh);
+
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -186,6 +321,17 @@ export class Book {
     const frontTex = this.tex(cur.right);
     const backTex  = this.tex(nxt.left);
     if (!frontTex || !backTex) return false;
+
+    // V-fold: track whether we're arriving at or leaving the popup spread.
+    if (j === this.POPUP_SPREAD) {
+      this.popupLeavingSpread = true;
+    }
+    if (j + 1 === this.POPUP_SPREAD && this.popupGroup) {
+      this.popupArrivingSpread = true;
+      this.popupGroup.visible = true;
+      this.popupFoldProgress = 0;
+      this.applyPopupFold();
+    }
 
     this.state.startTurn();
     this.isReverseTurn = false;
@@ -211,6 +357,17 @@ export class Book {
     const backTex  = this.tex(cur.left);
     if (!frontTex || !backTex) return false;
 
+    // V-fold: track whether we're arriving at or leaving the popup spread.
+    if (j === this.POPUP_SPREAD) {
+      this.popupLeavingSpread = true;
+    }
+    if (j - 1 === this.POPUP_SPREAD && this.popupGroup) {
+      this.popupArrivingSpread = true;
+      this.popupGroup.visible = true;
+      this.popupFoldProgress = 0;
+      this.applyPopupFold();
+    }
+
     this.state.startReverseTurn();   // decrements j
     this.isReverseTurn = true;
 
@@ -233,6 +390,26 @@ export class Book {
         : -Math.PI * progress;
       (this.turningPageMesh.material as THREE.ShaderMaterial).uniforms.uAngle.value = angle;
     }
+    // Crease shadow: bell curve peaking at mid-turn, zero when flat
+    const creaseOpacity = Math.sin(Math.PI * progress);
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = creaseOpacity;
+
+    // V-fold: popup fold angle is mechanically linked to turn progress,
+    // like a real popup book where the fold is driven by the page opening.
+    if (this.popupGroup) {
+      if (this.popupArrivingSpread) {
+        // Page lifting reveals the popup — fold up in sync with progress
+        this.popupFoldProgress = progress;
+        this.applyPopupFold();
+      } else if (this.popupLeavingSpread) {
+        // Page descending covers the popup — fold down in sync
+        this.popupFoldProgress = Math.max(0, 1 - progress);
+        this.applyPopupFold();
+        if (this.popupFoldProgress <= 0.001) {
+          this.popupGroup.visible = false;
+        }
+      }
+    }
   }
 
   completeTurn(): void {
@@ -242,6 +419,9 @@ export class Book {
       (this.turningPageMesh.material as THREE.Material).dispose();
       this.turningPageMesh = null;
     }
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
+    this.popupLeavingSpread = false;
+    this.popupArrivingSpread = false;
     this.syncDisplay();
   }
 
@@ -256,8 +436,33 @@ export class Book {
       (this.turningPageMesh.material as THREE.Material).dispose();
       this.turningPageMesh = null;
     }
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
+    this.popupLeavingSpread = false;
+    this.popupArrivingSpread = false;
     this.state.cancelTurn();
     this.syncDisplay();
+  }
+
+  /** Tick the popup fold animation and update the clip plane. Call every frame. */
+  update(_dt: number): void {
+    // Update the clipping plane from book-group local space to world space.
+    // Page surface is z=0 in local space; normal (0,0,1) clips away z<0.
+    this.group.updateMatrixWorld(true);
+    this.popupClipPlane.set(new THREE.Vector3(0, 0, 1), 0);
+    this.popupClipPlane.applyMatrix4(this.group.matrixWorld);
+
+    // V-fold is driven directly by updateTurningPage(); nothing to do here
+    // during active turns. Only handle the resting state.
+    if (!this.popupGroup) return;
+    if (this.popupLeavingSpread || this.popupArrivingSpread) return;
+  }
+
+  private applyPopupFold(): void {
+    if (!this.popupGroup) return;
+    const angle = this.popupFoldProgress * Math.PI / 2;
+    for (const child of this.popupGroup.children) {
+      child.rotation.x = angle;
+    }
   }
 
   /** Expose page dimensions for hit-testing in the scene layer. */

@@ -7,13 +7,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { Book } from './Book';
-import { BookState } from './BookState';
-import {
-  getBoundingBox,
-  countVerticesInRegion,
-  verifyFrameConsistency,
-  verifyIsometry,
-} from './TestUtils';
 
 describe('Book - Integration Tests', () => {
   let book: Book;
@@ -299,12 +292,6 @@ describe('Book - Physics Verification', () => {
     });
 
     it('curl width varies (tighter at φ=π/2)', () => {
-      const book = new Book({
-        numLeaves: 3,
-        pageWidth: 1.0,
-        curlRadius: 0.15,
-      });
-
       const measureCurlWidth = (progress: number): number => {
         const book2 = new Book({
           numLeaves: 3,
@@ -356,8 +343,8 @@ describe('Book - Physics Verification', () => {
           const positions = node.geometry.getAttribute('position') as THREE.BufferAttribute;
 
           // Collect Y positions at the top and bottom of the page
-          const topY = [];
-          const bottomY = [];
+          const topY: number[] = [];
+          const bottomY: number[] = [];
 
           for (let i = 0; i < positions.count; i++) {
             const y = positions.getY(i);

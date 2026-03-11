@@ -198,6 +198,24 @@ export class BookState {
   }
 
   /**
+   * Finalize a completed turn.  Ensures j is advanced (forward) and
+   * isTurning is cleared, even if setTurningProgress never reached
+   * exactly 1.0 (e.g. physics settle terminating at 0.999).
+   */
+  completeTurn(): void {
+    if (!this.isTurning) return;
+    if (this.isReverseTurn) {
+      // j was already decremented in startReverseTurn — nothing more to do.
+      this.phi = 0;
+    } else {
+      this.j++;
+      this.phi = Math.PI;
+    }
+    this.isTurning = false;
+    this.isReverseTurn = false;
+  }
+
+  /**
    * Cancel an in-progress turn and revert j and phi to the resting state
    * before the turn started.
    */

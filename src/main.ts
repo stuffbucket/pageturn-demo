@@ -17,7 +17,7 @@ const DRAG_COEFF = 6.5;  // velocity damping (air resistance)
 const BOOK_TILT = 0.76; // radians (~44°)
 
 // Spread index where the Vimeo video plays (j=4 → p8/p9).
-const VIDEO_SPREAD = 4;
+const VIDEO_SPREAD = 7;
 
 class PageTurnDemo {
   private scene: THREE.Scene;
@@ -82,7 +82,7 @@ class PageTurnDemo {
 
     this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     // Face-on, slightly elevated — the book tilt provides all the perspective
-    this.camera.position.set(0, 0.8, 3.4);
+    this.camera.position.set(0, 0.6, 2.6);
     this.camera.lookAt(0, 0, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -124,7 +124,7 @@ class PageTurnDemo {
     this.scene.add(desk);
 
     this.book = new Book({
-      numLeaves: 6,
+      numLeaves: 10,
       pageWidth: 1.0,
       pageHeight: 1.4,
       curlRadius: 0.15,
@@ -366,6 +366,7 @@ class PageTurnDemo {
                    (this.settleTarget <= 0 && this.dragProgress <= 0.001);
       if (done) {
         this.dragProgress = this.settleTarget;
+        this.book.updateTurningPage(this.dragProgress);
         this.settling     = false;
         this.controls.enabled = true;
         if (this.settleTarget >= 1) {
@@ -494,14 +495,16 @@ class PageTurnDemo {
   /** Compute the camera position that fills the viewport with the spread. */
   private computeCameraFillPosition(): void {
     const pw = this.book.getPageWidth();
-    const ph = this.book.getPageHeight();
     const aspect = this.camera.aspect;
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
 
-    // Distance so the spread fits vertically or horizontally (whichever is tighter).
-    const distV = (ph / 2) / Math.tan(halfFov);
+    // Distance so the video content fills the viewport in at least one direction.
+    // Video is 16:9 across a spread of 2×pw wide, so its world-space height is
+    // 2*pw * (9/16) = pw * 9/8 — significantly shorter than the full page height.
+    const videoH = pw * 9 / 8;   // world-space height of 16:9 content on spread
+    const distV = (videoH / 2) / Math.tan(halfFov);
     const distH = pw / (Math.tan(halfFov) * aspect); // half-spread width = pw
-    const dist = Math.max(distV, distH) * 1.05; // 5% margin
+    const dist = Math.max(distV, distH);
 
     const group = this.book.getGroup();
     group.updateMatrixWorld(true);

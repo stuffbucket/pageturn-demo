@@ -9,12 +9,25 @@ import * as THREE from 'three';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+/** Page aspect ratio: width 1.0, height 1.4. */
+const PAGE_ASPECT = 1.4;
+
+/**
+ * Create a canvas whose coordinate system compensates for the page's 1:1.4
+ * aspect stretch.  We apply ctx.scale(PAGE_ASPECT, 1) so that text and shapes
+ * are drawn wider by 1.4× on the canvas; the page geometry's vertical stretch
+ * then produces characters with correct proportions.
+ *
+ * Returns [canvas, ctx, w] where w = s / PAGE_ASPECT is the effective drawing
+ * width.  Use `w` for all X/width dimensions; use `s` for Y/height/font sizes.
+ */
+function createCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D, number] {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  return [canvas, ctx];
+  ctx.scale(PAGE_ASPECT, 1);
+  return [canvas, ctx, size / PAGE_ASPECT];
 }
 
 function toTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
@@ -28,28 +41,28 @@ function toTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
 // ── Covers ───────────────────────────────────────────────────────────────────
 
 function drawFrontCover(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
+  const [c, x, w] = createCanvas(s);
 
   // Deep teal-to-navy gradient
-  const bg = x.createLinearGradient(0, 0, s * 0.3, s);
+  const bg = x.createLinearGradient(0, 0, w * 0.3, s);
   bg.addColorStop(0, '#1b3a4b');
   bg.addColorStop(0.5, '#0d253a');
   bg.addColorStop(1, '#0a1628');
   x.fillStyle = bg;
-  x.fillRect(0, 0, s, s);
+  x.fillRect(0, 0, w, s);
 
   // Subtle linen texture
   x.globalAlpha = 0.04;
-  for (let y = 0; y < s; y += 3) { x.fillStyle = '#fff'; x.fillRect(0, y, s, 1); }
+  for (let y = 0; y < s; y += 3) { x.fillStyle = '#fff'; x.fillRect(0, y, w, 1); }
   x.globalAlpha = 1;
 
-  const cx = s / 2;
+  const cx = w / 2;
   const gold = '#d4a574';
   const goldL = '#e8c99b';
 
   // Top rule with diamond
   x.strokeStyle = gold; x.lineWidth = 1.5;
-  x.beginPath(); x.moveTo(s * 0.15, s * 0.22); x.lineTo(s * 0.85, s * 0.22); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.15, s * 0.22); x.lineTo(w * 0.85, s * 0.22); x.stroke();
   x.fillStyle = gold; x.save(); x.translate(cx, s * 0.22); x.rotate(Math.PI / 4);
   x.fillRect(-4, -4, 8, 8); x.restore();
 
@@ -66,7 +79,7 @@ function drawFrontCover(s: number): THREE.CanvasTexture {
 
   // Lower rule
   x.strokeStyle = gold; x.lineWidth = 0.8;
-  x.beginPath(); x.moveTo(s * 0.25, s * 0.48); x.lineTo(s * 0.75, s * 0.48); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.25, s * 0.48); x.lineTo(w * 0.75, s * 0.48); x.stroke();
 
   // Author line
   x.fillStyle = goldL;
@@ -83,14 +96,14 @@ function drawFrontCover(s: number): THREE.CanvasTexture {
 }
 
 function drawBackCover(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  const bg = x.createLinearGradient(s * 0.7, 0, 0, s);
+  const [c, x, w] = createCanvas(s);
+  const bg = x.createLinearGradient(w * 0.7, 0, 0, s);
   bg.addColorStop(0, '#1b3a4b'); bg.addColorStop(0.5, '#0d253a'); bg.addColorStop(1, '#0a1628');
-  x.fillStyle = bg; x.fillRect(0, 0, s, s);
+  x.fillStyle = bg; x.fillRect(0, 0, w, s);
   x.globalAlpha = 0.04;
-  for (let y = 0; y < s; y += 3) { x.fillStyle = '#fff'; x.fillRect(0, y, s, 1); }
+  for (let y = 0; y < s; y += 3) { x.fillStyle = '#fff'; x.fillRect(0, y, w, 1); }
   x.globalAlpha = 1;
-  const cx = s / 2;
+  const cx = w / 2;
   x.fillStyle = '#d4a574';
   x.font = `italic ${s * 0.028}px Georgia, serif`;
   x.textAlign = 'center';
@@ -109,20 +122,20 @@ function drawBackCover(s: number): THREE.CanvasTexture {
 }
 
 function drawEndpaper(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#e8ddd0'; x.fillRect(0, 0, s, s);
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#e8ddd0'; x.fillRect(0, 0, w, s);
   // Marbled pattern — overlapping translucent circles
   const cols = ['#c4724e', '#8b6f4e', '#a0845c', '#d4a574', '#6b4c3b'];
   x.globalAlpha = 0.06;
   for (let i = 0; i < 120; i++) {
     x.fillStyle = cols[i % cols.length];
     x.beginPath();
-    x.arc((i * 137.5) % s, (i * 97.3 + 43) % s, 20 + (i * 23 % 80), 0, Math.PI * 2);
+    x.arc((i * 137.5) % w, (i * 97.3 + 43) % s, 20 + (i * 23 % 80), 0, Math.PI * 2);
     x.fill();
   }
   x.globalAlpha = 0.03; x.strokeStyle = '#6b4c3b'; x.lineWidth = 0.5;
-  for (let i = 0; i < s; i += 8) {
-    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + s * 0.2, s); x.stroke();
+  for (let i = 0; i < w; i += 8) {
+    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + w * 0.2, s); x.stroke();
   }
   x.globalAlpha = 1;
   return toTexture(c);
@@ -131,16 +144,16 @@ function drawEndpaper(s: number): THREE.CanvasTexture {
 // ── Interior pages ───────────────────────────────────────────────────────────
 
 function drawTitlePage(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, s, s);
-  const cx = s / 2;
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, w, s);
+  const cx = w / 2;
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.5;
-  x.beginPath(); x.moveTo(s * 0.2, s * 0.15); x.lineTo(s * 0.8, s * 0.15); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.2, s * 0.15); x.lineTo(w * 0.8, s * 0.15); x.stroke();
   x.fillStyle = '#2c2c2c';
   x.font = `300 ${s * 0.08}px Georgia, serif`;
   x.textAlign = 'center'; x.fillText('WANDERLUST', cx, s * 0.32);
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.5;
-  x.beginPath(); x.moveTo(s * 0.35, s * 0.38); x.lineTo(s * 0.65, s * 0.38); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.35, s * 0.38); x.lineTo(w * 0.65, s * 0.38); x.stroke();
   x.fillStyle = '#8a8a8a';
   x.font = `italic ${s * 0.032}px Georgia, serif`;
   x.fillText('A Journey Through', cx, s * 0.46);
@@ -152,16 +165,16 @@ function drawTitlePage(s: number): THREE.CanvasTexture {
 }
 
 function drawPoemPage(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, s, s);
-  const cx = s / 2;
-  const m = s * 0.12;
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, w, s);
+  const cx = w / 2;
+  const m = w * 0.12;
   x.fillStyle = '#2c2c2c';
   x.font = `italic ${s * 0.035}px Georgia, serif`;
   x.textAlign = 'center';
   x.fillText('The Road Not Taken', cx, s * 0.12);
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.3;
-  x.beginPath(); x.moveTo(s * 0.3, s * 0.16); x.lineTo(s * 0.7, s * 0.16); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.3, s * 0.16); x.lineTo(w * 0.7, s * 0.16); x.stroke();
 
   x.fillStyle = '#3c3c3c';
   x.font = `${s * 0.026}px Georgia, serif`;
@@ -197,56 +210,14 @@ function drawPoemPage(s: number): THREE.CanvasTexture {
   x.fillStyle = '#8a8a8a';
   x.font = `italic ${s * 0.022}px Georgia, serif`;
   x.textAlign = 'right';
-  x.fillText('\u2014 Robert Frost, 1916', s - m, s * 0.9);
-  return toTexture(c);
-}
-
-function drawOceanSunrise(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  // Sky
-  const sky = x.createLinearGradient(0, 0, 0, s * 0.5);
-  sky.addColorStop(0, '#1a2a4a'); sky.addColorStop(0.4, '#4a6a8a');
-  sky.addColorStop(0.7, '#d4927a'); sky.addColorStop(1, '#f0d4a0');
-  x.fillStyle = sky; x.fillRect(0, 0, s, s * 0.5);
-  // Sun
-  const sx = s * 0.45, sy = s * 0.38;
-  const gl = x.createRadialGradient(sx, sy, 0, sx, sy, s * 0.2);
-  gl.addColorStop(0, 'rgba(255,235,200,0.9)'); gl.addColorStop(0.2, 'rgba(255,200,140,0.4)');
-  gl.addColorStop(1, 'rgba(255,160,100,0)');
-  x.fillStyle = gl; x.fillRect(0, 0, s, s * 0.5);
-  x.fillStyle = '#fff0d0'; x.beginPath(); x.arc(sx, sy, s * 0.035, 0, Math.PI * 2); x.fill();
-  // Water
-  const w = x.createLinearGradient(0, s * 0.5, 0, s);
-  w.addColorStop(0, '#2a5a7a'); w.addColorStop(0.3, '#1a4a6a');
-  w.addColorStop(0.7, '#0d3a5a'); w.addColorStop(1, '#082a4a');
-  x.fillStyle = w; x.fillRect(0, s * 0.5, s, s * 0.5);
-  // Reflection shimmer
-  x.globalAlpha = 0.15;
-  for (let i = 0; i < 40; i++) {
-    const ry = s * 0.52 + i * s * 0.012;
-    const rw = s * 0.04 + Math.sin(i * 0.7) * s * 0.015;
-    x.fillStyle = '#f0d4a0';
-    x.fillRect(sx + Math.sin(i * 1.3) * s * 0.02 - rw / 2, ry, rw, s * 0.004);
-  }
-  x.globalAlpha = 1;
-  // Wave hints
-  x.strokeStyle = 'rgba(100,160,200,0.1)'; x.lineWidth = 0.5;
-  for (let i = 0; i < 20; i++) {
-    const wy = s * 0.55 + i * s * 0.022;
-    x.beginPath();
-    for (let px = 0; px < s; px += 4) {
-      const py = wy + Math.sin(px * 0.02 + i * 2) * 2;
-      px === 0 ? x.moveTo(px, py) : x.lineTo(px, py);
-    }
-    x.stroke();
-  }
+  x.fillText('\u2014 Robert Frost, 1916', w - m, s * 0.9);
   return toTexture(c);
 }
 
 function drawPullQuotePage(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#f5f0e8'; x.fillRect(0, 0, s, s);
-  const cx = s / 2;
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#f5f0e8'; x.fillRect(0, 0, w, s);
+  const cx = w / 2;
   // Large opening quote mark
   x.fillStyle = 'rgba(212,165,116,0.25)';
   x.font = `${s * 0.25}px Georgia, serif`;
@@ -260,13 +231,13 @@ function drawPullQuotePage(s: number): THREE.CanvasTexture {
   x.font = `${s * 0.024}px Georgia, serif`;
   x.fillText('\u2014 J.R.R. Tolkien', cx, s * 0.65);
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.5;
-  x.beginPath(); x.moveTo(s * 0.35, s * 0.72); x.lineTo(s * 0.65, s * 0.72); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.35, s * 0.72); x.lineTo(w * 0.65, s * 0.72); x.stroke();
   return toTexture(c);
 }
 
 function drawColophonPage(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, s, s);
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, w, s);
   x.fillStyle = '#8a8a8a';
   x.font = `${s * 0.022}px Georgia, serif`;
   x.textAlign = 'center';
@@ -282,24 +253,24 @@ function drawColophonPage(s: number): THREE.CanvasTexture {
     '\u25C6',
   ];
   let y = s * 0.4;
-  for (const l of lines) { if (l === '') { y += s * 0.03; continue; } x.fillText(l, s / 2, y); y += s * 0.04; }
+  for (const l of lines) { if (l === '') { y += s * 0.03; continue; } x.fillText(l, w / 2, y); y += s * 0.04; }
   return toTexture(c);
 }
 
 // ── Text-heavy pages (cream bg, dark text — showcases crease visibility) ────
 
 function drawProsePage(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, s, s);
-  const m = s * 0.1;
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, w, s);
+  const m = w * 0.1;
 
   // Chapter heading
   x.fillStyle = '#2c2c2c';
   x.font = `italic ${s * 0.04}px Georgia, serif`;
   x.textAlign = 'center';
-  x.fillText('Chapter One', s / 2, s * 0.12);
+  x.fillText('Chapter One', w / 2, s * 0.12);
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.4;
-  x.beginPath(); x.moveTo(s * 0.3, s * 0.155); x.lineTo(s * 0.7, s * 0.155); x.stroke();
+  x.beginPath(); x.moveTo(w * 0.3, s * 0.155); x.lineTo(w * 0.7, s * 0.155); x.stroke();
 
   // Body text
   x.fillStyle = '#3a3a3a';
@@ -341,14 +312,14 @@ function drawProsePage(s: number): THREE.CanvasTexture {
   x.fillStyle = '#b0a898';
   x.font = `${s * 0.018}px Georgia, serif`;
   x.textAlign = 'center';
-  x.fillText('9', s / 2, s * 0.95);
+  x.fillText('9', w / 2, s * 0.95);
   return toTexture(c);
 }
 
 function drawProsePage2(s: number): THREE.CanvasTexture {
-  const [c, x] = createCanvas(s);
-  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, s, s);
-  const m = s * 0.1;
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0'; x.fillRect(0, 0, w, s);
+  const m = w * 0.1;
 
   x.fillStyle = '#3a3a3a';
   x.font = `${s * 0.024}px Georgia, serif`;
@@ -393,7 +364,452 @@ function drawProsePage2(s: number): THREE.CanvasTexture {
   x.fillStyle = '#b0a898';
   x.font = `${s * 0.018}px Georgia, serif`;
   x.textAlign = 'center';
-  x.fillText('10', s / 2, s * 0.95);
+  x.fillText('10', w / 2, s * 0.95);
+  return toTexture(c);
+}
+
+// ── Table of Contents ────────────────────────────────────────────────────────
+
+function drawTocPage(s: number): THREE.CanvasTexture {
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0';
+  x.fillRect(0, 0, w, s);
+
+  const m = w * 0.12;
+
+  // Title
+  x.fillStyle = '#2c2c2c';
+  x.font = `300 ${s * 0.05}px Georgia, serif`;
+  x.textAlign = 'left';
+  x.fillText('Contents', m, s * 0.15);
+
+  // Decorative rule
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.001;
+  x.beginPath();
+  x.moveTo(m, s * 0.19);
+  x.lineTo(w - m, s * 0.19);
+  x.stroke();
+
+  const entries: [string, string, string][] = [
+    ['I',   'Typography & Imagery',  '4'],
+    ['II',  'Video Textures',        '8'],
+    ['III', 'Production Video',      '12'],
+    ['IV',  'The Formalization',     '16'],
+  ];
+
+  let y = s * 0.30;
+  for (const [num, title, page] of entries) {
+    // Section number
+    x.fillStyle = '#8a7a68';
+    x.font = `italic ${s * 0.022}px Georgia, serif`;
+    x.textAlign = 'left';
+    x.fillText(num, m, y);
+
+    // Title
+    x.fillStyle = '#2c2c2c';
+    x.font = `${s * 0.028}px Georgia, serif`;
+    x.fillText(title, m + w * 0.08, y);
+
+    // Dot leader
+    x.fillStyle = '#c9b99a';
+    x.font = `${s * 0.018}px Georgia, serif`;
+    const titleW = x.measureText(title).width;
+    const startX = m + w * 0.08 + titleW + w * 0.02;
+    const endX = w - m - w * 0.04;
+    let dx = startX;
+    while (dx < endX) {
+      x.fillText('\u00B7', dx, y);
+      dx += w * 0.015;
+    }
+
+    // Page number
+    x.fillStyle = '#5a5048';
+    x.font = `${s * 0.024}px Georgia, serif`;
+    x.textAlign = 'right';
+    x.fillText(page, w - m, y);
+    x.textAlign = 'left';
+
+    y += s * 0.10;
+  }
+
+  return toTexture(c);
+}
+
+// ── Section Introduction Pages ───────────────────────────────────────────────
+
+interface SectionIntroConfig {
+  number: string;
+  title: string;
+  subtitle: string;
+  nutgraph: string[];
+  detail: string[];
+}
+
+function drawSectionIntroPage(s: number, config: SectionIntroConfig): THREE.CanvasTexture {
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0';
+  x.fillRect(0, 0, w, s);
+
+  const m = w * 0.12;          // Vignelli: generous, consistent margins
+  const right = w - m;
+
+  // Top rule
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.002;
+  x.beginPath();
+  x.moveTo(m, s * 0.12);
+  x.lineTo(right, s * 0.12);
+  x.stroke();
+
+  // Section number — large, right-aligned
+  x.fillStyle = '#c9b99a';
+  x.font = `${s * 0.07}px Helvetica Neue, Helvetica, Arial, sans-serif`;
+  x.textAlign = 'right';
+  x.fillText(config.number, right, s * 0.24);
+
+  // Title — bold sans-serif, one or two lines max
+  x.fillStyle = '#2a2520';
+  x.font = `bold ${s * 0.050}px Helvetica Neue, Helvetica, Arial, sans-serif`;
+  x.textAlign = 'left';
+  const titleLines = config.title.split('&').length > 1
+    ? config.title.split(' & ').reduce((acc: string[], _, i, arr) => {
+        if (i === 0) acc.push(arr[0] + ' &');
+        if (i === 1) acc.push(arr[1]);
+        return acc;
+      }, [])
+    : [config.title];
+  let ty = s * 0.34;
+  for (const line of titleLines) {
+    x.fillText(line, m, ty);
+    ty += s * 0.06;
+  }
+
+  // Subtitle
+  x.fillStyle = '#6a6058';
+  x.font = `italic ${s * 0.024}px Georgia, serif`;
+  x.fillText(config.subtitle, m, ty + s * 0.01);
+
+  // Divider
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.001;
+  const divY = ty + s * 0.05;
+  x.beginPath();
+  x.moveTo(m, divY);
+  x.lineTo(m + w * 0.18, divY);
+  x.stroke();
+
+  // Nutgraph — the key insight
+  x.fillStyle = '#3a3530';
+  x.font = `italic ${s * 0.022}px Georgia, serif`;
+  let ny = divY + s * 0.06;
+  const nlh = s * 0.030;
+  for (const l of config.nutgraph) {
+    if (l === '') { ny += nlh * 0.3; continue; }
+    x.fillText(l, m, ny);
+    ny += nlh;
+  }
+
+  // Detail — compact body text
+  x.fillStyle = '#6a6560';
+  x.font = `${s * 0.019}px Georgia, serif`;
+  let dy = ny + s * 0.025;
+  const dlh = s * 0.026;
+  for (const l of config.detail) {
+    if (l === '') { dy += dlh * 0.3; continue; }
+    x.fillText(l, m, dy);
+    dy += dlh;
+  }
+
+  // Bottom rule
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.002;
+  x.beginPath();
+  x.moveTo(m, s * 0.90);
+  x.lineTo(right, s * 0.90);
+  x.stroke();
+
+  return toTexture(c);
+}
+
+function drawSection1Intro(s: number): THREE.CanvasTexture {
+  return drawSectionIntroPage(s, {
+    number: 'I',
+    title: 'Typography & Imagery',
+    subtitle: 'The book as a vessel for the written word',
+    nutgraph: [
+      'A digital book must first succeed',
+      'as a book \u2014 the typography, the',
+      'rhythm of prose against white space.',
+    ],
+    detail: [
+      'Canvas textures carry Georgia serif at',
+      'full resolution, with careful leading and',
+      'a warm parchment ground.',
+      '',
+      'An Unsplash photograph proves raster',
+      'imagery integrates seamlessly with the',
+      'procedurally-generated pages.',
+    ],
+  });
+}
+
+function drawSection2Intro(s: number): THREE.CanvasTexture {
+  return drawSectionIntroPage(s, {
+    number: 'II',
+    title: 'Video Textures',
+    subtitle: 'Motion pictures imbued into paper',
+    nutgraph: [
+      'Each frame of video is drawn into the',
+      'page\u2019s canvas texture, so it curls',
+      'with the paper itself.',
+    ],
+    detail: [
+      'Big Buck Bunny streams as a direct MP4,',
+      'drawn via drawImage at 60 fps across',
+      'two page surfaces.',
+      '',
+      'The video bends during page turns \u2014',
+      'not a flat overlay, but ink that moves.',
+    ],
+  });
+}
+
+function drawSection3Intro(s: number): THREE.CanvasTexture {
+  return drawSectionIntroPage(s, {
+    number: 'III',
+    title: 'Production Video',
+    subtitle: 'From the studio to the spread',
+    nutgraph: [
+      'Freight Rail Works \u201CTrailblazer\u201D by',
+      'Loop \u2014 a CG data-visualization',
+      'piece served as a local MP4.',
+    ],
+    detail: [
+      'The camera zooms in when the spread',
+      'is reached, synced to the video\u2019s own',
+      'timeline. Zoom in over 3 s, hold,',
+      'then ease back at the 22 s mark.',
+    ],
+  });
+}
+
+function drawSection4Intro(s: number): THREE.CanvasTexture {
+  return drawSectionIntroPage(s, {
+    number: 'IV',
+    title: 'The Formalization',
+    subtitle: 'Mathematics behind the curl',
+    nutgraph: [
+      'Five equations govern every bend:',
+      'progress-to-angle, vertex displacement,',
+      'physics settle, animation, and shadow.',
+    ],
+    detail: [
+      'The facing page reproduces the reference',
+      'sheet from contrib/, rendered at 3\u00D7.',
+      '',
+      'Key constraint: A < 0.5 ensures the',
+      'free edge never reverses direction.',
+    ],
+  });
+}
+
+// ── PDF rendered page (loads pre-rendered PNG of the PDF) ─────────────────────
+
+function loadPdfPageTexture(): THREE.Texture {
+  const loader = new THREE.TextureLoader();
+  const texture = loader.load('/images/pagecurl-full.png');
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
+// ── Preface page (facing the TOC) ────────────────────────────────────────────
+
+function drawPrefacePage(s: number): THREE.CanvasTexture {
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0';
+  x.fillRect(0, 0, w, s);
+
+  const cx = w / 2;
+  const m = w * 0.12;
+
+  x.fillStyle = '#8a7a68';
+  x.font = `italic ${s * 0.026}px Georgia, serif`;
+  x.textAlign = 'center';
+  x.fillText('Preface', cx, s * 0.15);
+
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.001;
+  x.beginPath();
+  x.moveTo(w * 0.35, s * 0.19);
+  x.lineTo(w * 0.65, s * 0.19);
+  x.stroke();
+
+  x.fillStyle = '#3a3530';
+  x.font = `${s * 0.022}px Georgia, serif`;
+  x.textAlign = 'left';
+  const lines = [
+    'This book is a technical demonstration',
+    'of real-time page-turn rendering in the',
+    'browser, built with Three.js and custom',
+    'GLSL shaders.',
+    '',
+    'Every page you see — text, images, and',
+    'video — is a canvas texture mapped onto',
+    '3D geometry. When a page turns, a vertex',
+    'shader bends it along a cylinder whose',
+    'axis sweeps from spine to edge.',
+    '',
+    'The four sections that follow showcase',
+    'increasing complexity: static typography,',
+    'looping video textures, a produced',
+    'commercial with synchronized camera',
+    'animation, and finally the mathematical',
+    'formalization that governs every curl.',
+    '',
+    'Drag any page to turn it, or use',
+    'the arrow keys.',
+  ];
+  let y = s * 0.28;
+  const lh = s * 0.03;
+  for (const l of lines) {
+    if (l === '') { y += lh * 0.5; continue; }
+    x.fillText(l, m, y);
+    y += lh;
+  }
+
+  return toTexture(c);
+}
+
+// ── Video info pages (right side of video section intro spreads) ─────────────
+
+function drawBBBInfoPage(s: number): THREE.CanvasTexture {
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0';
+  x.fillRect(0, 0, w, s);
+
+  const m = w * 0.1;
+
+  x.fillStyle = '#c9b99a';
+  x.font = `${s * 0.018}px Georgia, serif`;
+  x.textAlign = 'left';
+  x.fillText('DEMONSTRATION', m, s * 0.12);
+
+  x.fillStyle = '#2a2520';
+  x.font = `bold ${s * 0.036}px Georgia, serif`;
+  x.fillText('Big Buck Bunny', m, s * 0.20);
+
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.001;
+  x.beginPath();
+  x.moveTo(m, s * 0.24);
+  x.lineTo(m + w * 0.30, s * 0.24);
+  x.stroke();
+
+  x.fillStyle = '#5a5048';
+  x.font = `italic ${s * 0.021}px Georgia, serif`;
+  x.fillText('Blender Foundation, 2008', m, s * 0.30);
+
+  x.fillStyle = '#3a3530';
+  x.font = `${s * 0.020}px Georgia, serif`;
+  const lines = [
+    'An open-source animated short served',
+    'from Google\u2019s public CDN as a direct',
+    'MP4 stream.',
+    '',
+    'Each frame is drawn to two canvas',
+    'textures via drawImage(), splitting',
+    'the 16:9 frame across the left and',
+    'right page surfaces.',
+    '',
+    'The video loops continuously. Because',
+    'the frames are part of the page',
+    'texture, they curl and bend with the',
+    'paper during a page turn \u2014 not a',
+    'flat overlay floating above the book.',
+    '',
+    'Turn the page to see it in action.',
+  ];
+  let y = s * 0.38;
+  const lh = s * 0.028;
+  for (const l of lines) {
+    if (l === '') { y += lh * 0.4; continue; }
+    x.fillText(l, m, y);
+    y += lh;
+  }
+
+  // Small technical note
+  x.fillStyle = '#8a7a68';
+  x.font = `italic ${s * 0.016}px Georgia, serif`;
+  x.fillText('Source: commondatastorage.googleapis.com', m, s * 0.88);
+
+  return toTexture(c);
+}
+
+function drawVimeoCreditsPage(s: number): THREE.CanvasTexture {
+  const [c, x, w] = createCanvas(s);
+  x.fillStyle = '#faf6f0';
+  x.fillRect(0, 0, w, s);
+
+  const m = w * 0.1;
+
+  x.fillStyle = '#c9b99a';
+  x.font = `${s * 0.018}px Georgia, serif`;
+  x.textAlign = 'left';
+  x.fillText('PRODUCTION', m, s * 0.12);
+
+  x.fillStyle = '#2a2520';
+  x.font = `bold ${s * 0.032}px Georgia, serif`;
+  x.fillText('Freight Rail Works', m, s * 0.20);
+  x.fillText('\u201CTrailblazer\u201D', m, s * 0.26);
+
+  x.strokeStyle = '#c9b99a';
+  x.lineWidth = s * 0.001;
+  x.beginPath();
+  x.moveTo(m, s * 0.30);
+  x.lineTo(m + w * 0.30, s * 0.30);
+  x.stroke();
+
+  x.fillStyle = '#5a5048';
+  x.font = `italic ${s * 0.020}px Georgia, serif`;
+  x.fillText('Aggressive / Loop, 2020', m, s * 0.36);
+
+  x.fillStyle = '#3a3530';
+  x.font = `${s * 0.018}px Georgia, serif`;
+  const credits: [string, string][] = [
+    ['Creative Directors', 'Alex Topaller,'],
+    ['', 'Daniel Shapiro,'],
+    ['', 'Alex Mikhaylov,'],
+    ['', 'Max Chelyadnikov'],
+    ['Producers', 'Alex Aab, Daniel Shapiro'],
+    ['Art Director', 'Alex Mikhalyov'],
+    ['CG Supervisor', 'Max Chelyadnikov'],
+    ['3D Animator', 'Dmitriy Paukov'],
+    ['FX TD', 'Artemy Perevertin,'],
+    ['', 'Danil Krivoruchko'],
+    ['Compositing', 'Max Chelyadnikov'],
+  ];
+  let y = s * 0.44;
+  const lh = s * 0.026;
+  for (const [role, name] of credits) {
+    if (role) {
+      x.fillStyle = '#8a7a68';
+      x.font = `italic ${s * 0.016}px Georgia, serif`;
+      x.fillText(role, m, y);
+    }
+    x.fillStyle = '#3a3530';
+    x.font = `${s * 0.018}px Georgia, serif`;
+    x.fillText(name, m + w * 0.30, y);
+    y += lh;
+  }
+
+  // Link
+  x.fillStyle = '#8a7a68';
+  x.font = `italic ${s * 0.016}px Georgia, serif`;
+  x.fillText('myshli.com/project/freight-rail', m, s * 0.88);
+
   return toTexture(c);
 }
 
@@ -552,27 +968,35 @@ export function generateBookTextures(
   textures.set('cover_back_int',  drawEndpaper(s));
   textures.set('cover_back_ext',  drawBackCover(s));
 
-  // Big Buck Bunny full spread at native 16:9 (p4 left, p5 right)
+  // Big Buck Bunny full spread at native 16:9 (p10 left, p11 right)
   const bbb = createVideoSpreadTextures(s);
-  textures.set('p4', bbb.left);
-  textures.set('p5', bbb.right);
+  textures.set('p10', bbb.left);
+  textures.set('p11', bbb.right);
 
-  // Vimeo video spread (p8 left, p9 right) — live frames drawn to canvas.
+  // Vimeo video spread (p14 left, p15 right) — live frames drawn to canvas.
   const vimeo = createVimeoVideoTextures(s);
-  textures.set('p8', vimeo.left);
-  textures.set('p9', vimeo.right);
+  textures.set('p14', vimeo.left);
+  textures.set('p15', vimeo.right);
 
   // Interior pages — specific designs, with colophon fallback
   const designs = new Map<number, () => THREE.Texture>([
-    [1, () => drawTitlePage(s)],
-    [2, () => drawPoemPage(s)],
-    [3, () => loadUnsplashTexture()],
-    // p4, p5 set above (BBB video spread)
-    [6, () => drawPullQuotePage(s)],
-    [7, () => drawOceanSunrise(s)],
-    // p8, p9 set above (Vimeo thumbnail spread)
-    [10, () => drawProsePage(s)],
-    [11, () => drawProsePage2(s)],
+    [1,  () => drawTitlePage(s)],
+    [2,  () => drawTocPage(s)],
+    [3,  () => drawPrefacePage(s)],
+    [4,  () => drawSection1Intro(s)],
+    [5,  () => drawPoemPage(s)],
+    [6,  () => loadUnsplashTexture()],
+    [7,  () => drawPullQuotePage(s)],
+    [8,  () => drawSection2Intro(s)],
+    [9,  () => drawBBBInfoPage(s)],
+    // p10, p11 set above (BBB video spread)
+    [12, () => drawSection3Intro(s)],
+    [13, () => drawVimeoCreditsPage(s)],
+    // p14, p15 set above (Vimeo video spread)
+    [16, () => drawSection4Intro(s)],
+    [17, () => loadPdfPageTexture()],
+    [18, () => drawProsePage(s)],
+    [19, () => drawProsePage2(s)],
   ]);
 
   for (let i = 1; i <= numPages; i++) {

@@ -106,7 +106,7 @@ export class Book {
 
   // Popup diorama — paper mountains that pop up from the page on a specific spread.
   private popupGroup: THREE.Group | null = null;
-  private readonly POPUP_SPREAD = 4;  // j=4 → p8/p9
+  private readonly POPUP_SPREAD = 7;  // j=7 → p14/p15
   private popupFoldProgress = 0;       // 0 = flat on page, 1 = fully upright
   private popupLeavingSpread = false;  // true during a turn away from popup spread
   private popupArrivingSpread = false; // true during a turn toward the popup spread
@@ -422,6 +422,7 @@ export class Book {
     (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
     this.popupLeavingSpread = false;
     this.popupArrivingSpread = false;
+    this.state.completeTurn();
     this.syncDisplay();
   }
 

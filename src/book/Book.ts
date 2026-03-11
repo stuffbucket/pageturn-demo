@@ -20,12 +20,44 @@ export interface BookParams {
   textureSize?: number;
 }
 
-// Inline vertex+fragment shaders that support two textures via gl_FrontFacing.
+// Vertex shader: per-vertex Y-rotation with gravity-based free-edge lag.
+//
+// phi(t) = phi_spine + bendAmount * t * sin(-2 * phi_spine)
+//
+// sin(-2*phi) provides the correct signed envelope for the full arc:
+//   phi in (0,  -π/2): sin > 0 → vertex angle less negative → edge lags behind spine
+//   phi = -π/2:        sin = 0 → no correction, page straight while vertical
+//   phi in (-π/2, -π): sin < 0 → vertex angle more negative → edge leads (falls ahead)
+// This is the same formula for both forward and reverse turns.
 const FLIP_VERT = /* glsl */`
+  uniform float uAngle;      // spine angle: 0 → -π (forward) or -π → 0 (reverse)
+  uniform float uBendAmount;
+  uniform float uPageWidth;
   varying vec2 vUv;
+
   void main() {
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec3 pos = position;
+
+    float t = pos.x / uPageWidth;  // 0 at spine, 1 at free edge
+
+    // Center-of-gravity bending: edge sags toward nearest surface.
+    //
+    // sin(2*phi) flips sign at phi=-PI/2 (90 deg):
+    //   Lift (0 to -PI/2): negative correction → edge leads → sags toward right  (
+    //   Fall (-PI/2 to -PI): positive correction → edge lags → sags toward left  )
+    // Together: ( ) shape throughout the turn.
+    //
+    // bendAmount must be < 0.5 so the edge velocity never reverses:
+    //   d(phi_edge)/d(phi_spine) = 1 + 2*A*cos(2*phi) >= 1 - 2*A > 0
+    //   With A=0.4: minimum velocity = 0.2 > 0. No stall, no wag.
+    float phi = uAngle + uBendAmount * t * sin(2.0 * uAngle);
+
+    float origX = pos.x;
+    pos.x =  origX * cos(phi);
+    pos.z = -origX * sin(phi);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 const FLIP_FRAG = /* glsl */`
@@ -114,29 +146,30 @@ export class Book {
     this.applyToMesh(this.rightMesh, right);
   }
 
-  /** Spawn a flipping-page mesh with its own two-sided shader. */
+  /** Spawn a flipping-page mesh with per-vertex bending shader. */
   private spawnFlipPage(
     frontTex: THREE.Texture,
     backTex: THREE.Texture,
-    startRotation: number
+    startAngle: number,  // 0 for forward, -Math.PI for reverse
   ): void {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         frontTexture: { value: frontTex },
         backTexture:  { value: backTex  },
+        uAngle:       { value: startAngle },
+        uBendAmount:  { value: 0.4 },
+        uPageWidth:   { value: this.pageWidth },
       },
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
       side: THREE.DoubleSide,
     });
 
-    // Right-page geometry: x = 0 … pageWidth.  Rotating around Y at x=0
-    // means the page pivots around the spine — exactly what we want.
-    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight);
+    // 64 X segments for smooth curvature along the page width.
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 64, 1);
     geo.translate(this.pageWidth / 2, 0, 0);
 
     this.turningPageMesh = new THREE.Mesh(geo, mat);
-    this.turningPageMesh.rotation.y = startRotation;
     this.turningPageMesh.position.z = 0.001;
     this.group.add(this.turningPageMesh);
   }
@@ -195,10 +228,10 @@ export class Book {
   updateTurningPage(progress: number): void {
     this.state.setTurningProgress(progress);
     if (this.turningPageMesh) {
-      // Negative rotation sweeps +X through +Z (toward viewer).
-      this.turningPageMesh.rotation.y = this.isReverseTurn
+      const angle = this.isReverseTurn
         ? -Math.PI * (1 - progress)
         : -Math.PI * progress;
+      (this.turningPageMesh.material as THREE.ShaderMaterial).uniforms.uAngle.value = angle;
     }
   }
 

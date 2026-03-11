@@ -218,7 +218,14 @@ class PageTurnDemo {
   private beginSettle(target: number): void {
     this.settling       = true;
     this.settleTarget   = target;
-    this.settleVelocity = this.dragVelocity; // hand off momentum from drag
+    // Seed velocity with drag momentum, but always ensure at least a minimum
+    // in the settle direction so the page never appears to stall from rest
+    // at the midpoint (where the bend envelope is also zero).
+    const dir    = target >= 1 ? 1 : -1;
+    const minVel = 0.8;
+    this.settleVelocity = (dir * this.dragVelocity > 0)
+      ? Math.max(Math.abs(this.dragVelocity), minVel) * dir
+      : minVel * dir;
   }
 
   // ── Timed button/keyboard turn ─────────────────────────────────────────────

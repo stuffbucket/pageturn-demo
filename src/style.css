@@ -1,0 +1,102 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+  overflow: hidden;
+  color: #ffffff;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+}
+
+#canvas-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+#ui-overlay {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 300px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#info-panel h1 {
+  font-size: 1.5em;
+  margin-bottom: 10px;
+  color: #64b5f6;
+}
+
+#info-panel p {
+  margin: 8px 0;
+  font-size: 0.95em;
+}
+
+#state-display {
+  color: #81c784;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+#controls {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+button {
+  flex: 1;
+  padding: 8px 12px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  background: #1976d2;
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+#stats {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.85em;
+}
+
+#stats p {
+  margin: 5px 0;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

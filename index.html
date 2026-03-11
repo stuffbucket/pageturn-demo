@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Page Turn Demo - Formal Specification Implementation</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="canvas-container"></div>
+      <div id="ui-overlay">
+        <div id="info-panel">
+          <h1>📖 Page Turn Demo</h1>
+          <p id="state-display">State: Closed (Front)</p>
+          <div id="controls">
+            <button id="prev-btn">← Previous</button>
+            <button id="next-btn">Next →</button>
+          </div>
+          <div id="stats">
+            <p>FPS: <span id="fps">60</span></p>
+            <p>Current Page: <span id="current-page">-</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

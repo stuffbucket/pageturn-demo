@@ -212,6 +212,25 @@ export class Book {
     this.syncDisplay();
   }
 
+  /**
+   * Cancel an in-progress drag turn and restore the book to its pre-turn state.
+   * The BookState internal j/phi are reset via the public reset helper.
+   */
+  cancelTurn(): void {
+    if (this.turningPageMesh) {
+      this.group.remove(this.turningPageMesh);
+      this.turningPageMesh.geometry.dispose();
+      (this.turningPageMesh.material as THREE.Material).dispose();
+      this.turningPageMesh = null;
+    }
+    this.state.cancelTurn();
+    this.syncDisplay();
+  }
+
+  /** Expose page dimensions for hit-testing in the scene layer. */
+  getPageWidth():  number { return this.pageWidth; }
+  getPageHeight(): number { return this.pageHeight; }
+
   getGroup(): THREE.Group  { return this.group; }
   getState(): BookState    { return this.state; }
   getStateDescription(): string { return this.state.getStateDescription(); }

@@ -196,4 +196,19 @@ export class BookState {
   getTotalStates(): number {
     return this.numLeaves + 2; // -1 to n+1
   }
+
+  /**
+   * Cancel an in-progress turn and revert j and phi to the resting state
+   * before the turn started.
+   */
+  cancelTurn(): void {
+    if (!this.isTurning) return;
+    if (this.isReverseTurn) {
+      // startReverseTurn() decremented j — put it back
+      this.j++;
+    }
+    this.phi = 0;
+    this.isTurning = false;
+    this.isReverseTurn = false;
+  }
 }

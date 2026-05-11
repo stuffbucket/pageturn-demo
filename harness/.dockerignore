@@ -1,0 +1,10 @@
+node_modules
+harness/node_modules
+harness/output
+.git
+.vscode
+.idea
+dist
+dist-ssr
+public/videos
+*.log

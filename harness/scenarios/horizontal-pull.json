@@ -1,0 +1,16 @@
+{
+  "name": "horizontal-pull",
+  "viewport": { "width": 1280, "height": 720 },
+  "duration": 1500,
+  "fps": 60,
+  "events": [
+    { "t": 0,    "type": "pointerdown", "x": 0.88, "y": 0.50 },
+    { "t": 100,  "type": "pointermove", "x": 0.78, "y": 0.50 },
+    { "t": 200,  "type": "pointermove", "x": 0.66, "y": 0.50 },
+    { "t": 300,  "type": "pointermove", "x": 0.54, "y": 0.50 },
+    { "t": 400,  "type": "pointermove", "x": 0.42, "y": 0.50 },
+    { "t": 500,  "type": "pointermove", "x": 0.30, "y": 0.50 },
+    { "t": 600,  "type": "pointermove", "x": 0.20, "y": 0.50 },
+    { "t": 650,  "type": "pointerup",   "x": 0.18, "y": 0.50 }
+  ]
+}

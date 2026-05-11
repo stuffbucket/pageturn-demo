@@ -50,6 +50,7 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     clip: vi.fn(),
     isPointInPath: vi.fn(() => false),
     isPointInStroke: vi.fn(() => false),
+    measureText: vi.fn(() => ({ width: 50 })),
     canvas: { width: 512, height: 512 },
   } as unknown as CanvasRenderingContext2D;
 

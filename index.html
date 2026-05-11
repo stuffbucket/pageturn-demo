@@ -3,20 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Page Turn Demo - Formal Specification Implementation</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app">
-      <div id="canvas-container"></div>
+    <a href="#book-controls" class="sr-skip">Skip to book controls</a>
+    <div id="app" role="application" aria-label="Interactive 3D Book">
+      <div id="canvas-container"
+           role="img"
+           aria-label="3D book with draggable pages. Use arrow keys to turn pages, shift+arrow to fan multiple pages."
+           tabindex="0">
+      </div>
+      <!-- Live region: screen readers announce page changes here -->
+      <div id="sr-announcer" aria-live="polite" aria-atomic="true" class="sr-only"></div>
       <div id="ui-overlay">
         <div id="info-panel">
           <h1>📖 Page Turn Demo</h1>
           <p id="state-display">State: Closed (Front)</p>
-          <div id="controls">
-            <button id="prev-btn">← Previous</button>
-            <button id="next-btn">Next →</button>
+          <div id="controls" id="book-controls">
+            <button id="prev-btn" aria-label="Previous page">← Previous</button>
+            <button id="next-btn" aria-label="Next page">Next →</button>
           </div>
           <div id="stats">
             <p>FPS: <span id="fps">60</span></p>

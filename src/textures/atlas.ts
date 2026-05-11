@@ -716,8 +716,8 @@ function drawBBBInfoPage(s: number): THREE.CanvasTexture {
   x.font = `${s * 0.020}px Georgia, serif`;
   const lines = [
     'An open-source animated short served',
-    'from Google\u2019s public CDN as a direct',
-    'MP4 stream.',
+    'as a direct MP4 stream from the local',
+    'public/ directory.',
     '',
     'Each frame is drawn to two canvas',
     'textures via drawImage(), splitting',
@@ -743,7 +743,7 @@ function drawBBBInfoPage(s: number): THREE.CanvasTexture {
   // Small technical note
   x.fillStyle = '#8a7a68';
   x.font = `italic ${s * 0.016}px Georgia, serif`;
-  x.fillText('Source: commondatastorage.googleapis.com', m, s * 0.88);
+  x.fillText('Source: archive.org/details/BigBuckBunny_124', m, s * 0.88);
 
   return toTexture(c);
 }
@@ -895,10 +895,15 @@ function createVimeoVideoTextures(s: number): { left: THREE.Texture; right: THRE
 
 // ── Video spread (Big Buck Bunny, native 16:9 across two pages) ──────────────
 
+// Hosted on archive.org — long-stable mirror, serves Access-Control-Allow-Origin: *
+// so drawImage(video) into a canvas doesn't taint it.
+const BIG_BUCK_BUNNY_URL =
+  'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4';
+
 function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THREE.Texture } {
   const video = document.createElement('video');
-  video.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
   video.crossOrigin = 'anonymous';
+  video.src = BIG_BUCK_BUNNY_URL;
   video.loop = true;
   video.muted = true;
   video.playsInline = true;
@@ -953,32 +958,103 @@ function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THR
   return { left: leftTex, right: rightTex };
 }
 
+// ── Texture Pool ─────────────────────────────────────────────────────────────
+//
+// Instead of generating all textures eagerly (≈ 24 × 1024² × 4 bytes = 96 MB),
+// the pool lazily generates them on demand and evicts distant pages.  Video
+// textures are always live (they update per frame and can't be evicted).
+//
+// The pool exposes a Map-compatible .get() interface so Book.ts needs minimal
+// changes.  Call retainWindow(j, numLeaves) after every page turn to dispose
+// textures outside a ±RADIUS window.
+
+const RETAIN_RADIUS = 3; // keep textures for spreads j ± RADIUS
+
+export class TexturePool {
+  private cache = new Map<string, THREE.Texture>();
+  private generators = new Map<string, () => THREE.Texture>();
+  private live = new Map<string, THREE.Texture>(); // video textures (never evicted)
+
+  constructor(
+    generators: Map<string, () => THREE.Texture>,
+    live: Map<string, THREE.Texture>,
+  ) {
+    this.generators = generators;
+    this.live = live;
+    // Pre-populate cache with live textures so get() always returns them.
+    for (const [k, v] of live) this.cache.set(k, v);
+  }
+
+  /** Get a texture by page name. Lazily generates if not cached. */
+  get(name: string): THREE.Texture | undefined {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const gen = this.generators.get(name);
+    if (!gen) return undefined;
+    const tex = gen();
+    this.cache.set(name, tex);
+    return tex;
+  }
+
+  has(name: string): boolean {
+    return this.generators.has(name) || this.cache.has(name);
+  }
+
+  /**
+   * Evict textures outside the ±RETAIN_RADIUS window from spread j.
+   * Covers are always retained.  Video textures (live) are never evicted.
+   */
+  retainWindow(currentJ: number, numLeaves: number): void {
+    // Build the set of page names to keep
+    const keep = new Set<string>();
+    keep.add('cover_front_ext');
+    keep.add('cover_front_int');
+    keep.add('cover_back_int');
+    keep.add('cover_back_ext');
+
+    for (let j = currentJ - RETAIN_RADIUS; j <= currentJ + RETAIN_RADIUS; j++) {
+      if (j < -1 || j > numLeaves + 1) continue;
+      // Add page names for this spread
+      if (j === -1) { /* cover_front_ext already kept */ }
+      else if (j === 0) { keep.add('p1'); }
+      else if (j >= 1 && j <= numLeaves - 1) { keep.add(`p${2*j}`); keep.add(`p${2*j+1}`); }
+      else if (j === numLeaves) { keep.add(`p${2*numLeaves}`); }
+      else if (j === numLeaves + 1) { /* cover_back_ext already kept */ }
+    }
+
+    for (const [name, tex] of this.cache) {
+      if (keep.has(name) || this.live.has(name)) continue;
+      tex.dispose();
+      this.cache.delete(name);
+    }
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export function generateBookTextures(
   numPages: number,
   textureSize: number = 1024
-): Map<string, THREE.Texture> {
-  const textures = new Map<string, THREE.Texture>();
+): TexturePool {
   const s = textureSize;
 
-  // Covers + endpapers
-  textures.set('cover_front_ext', drawFrontCover(s));
-  textures.set('cover_front_int', drawEndpaper(s));
-  textures.set('cover_back_int',  drawEndpaper(s));
-  textures.set('cover_back_ext',  drawBackCover(s));
+  // Live textures: video spreads that update every frame and can't be evicted.
+  const live = new Map<string, THREE.Texture>();
 
-  // Big Buck Bunny full spread at native 16:9 (p10 left, p11 right)
   const bbb = createVideoSpreadTextures(s);
-  textures.set('p10', bbb.left);
-  textures.set('p11', bbb.right);
+  live.set('p10', bbb.left);
+  live.set('p11', bbb.right);
 
-  // Vimeo video spread (p14 left, p15 right) — live frames drawn to canvas.
   const vimeo = createVimeoVideoTextures(s);
-  textures.set('p14', vimeo.left);
-  textures.set('p15', vimeo.right);
+  live.set('p14', vimeo.left);
+  live.set('p15', vimeo.right);
 
-  // Interior pages — specific designs, with colophon fallback
+  // Generator factories: one per page name, called lazily on first access.
+  const generators = new Map<string, () => THREE.Texture>();
+  generators.set('cover_front_ext', () => drawFrontCover(s));
+  generators.set('cover_front_int', () => drawEndpaper(s));
+  generators.set('cover_back_int',  () => drawEndpaper(s));
+  generators.set('cover_back_ext',  () => drawBackCover(s));
+
   const designs = new Map<number, () => THREE.Texture>([
     [1,  () => drawTitlePage(s)],
     [2,  () => drawTocPage(s)],
@@ -989,10 +1065,10 @@ export function generateBookTextures(
     [7,  () => drawPullQuotePage(s)],
     [8,  () => drawSection2Intro(s)],
     [9,  () => drawBBBInfoPage(s)],
-    // p10, p11 set above (BBB video spread)
+    // p10, p11 are live (BBB video)
     [12, () => drawSection3Intro(s)],
     [13, () => drawVimeoCreditsPage(s)],
-    // p14, p15 set above (Vimeo video spread)
+    // p14, p15 are live (Vimeo video)
     [16, () => drawSection4Intro(s)],
     [17, () => loadPdfPageTexture()],
     [18, () => drawProsePage(s)],
@@ -1000,10 +1076,11 @@ export function generateBookTextures(
   ]);
 
   for (let i = 1; i <= numPages; i++) {
-    if (textures.has(`p${i}`)) continue;  // already set (BBB spread)
+    const key = `p${i}`;
+    if (live.has(key)) continue;
     const factory = designs.get(i);
-    textures.set(`p${i}`, factory ? factory() : drawColophonPage(s));
+    generators.set(key, factory ?? (() => drawColophonPage(s)));
   }
 
-  return textures;
+  return new TexturePool(generators, live);
 }

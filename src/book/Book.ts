@@ -52,7 +52,18 @@ const FLIP_VERT = /* glsl */`
     vec2 rel2 = pos.xy - uCreaseOrigin;
     float s = dot(rel2, uCornerDir);
 
-    if (s > 0.0 && uDihedral > 0.0) {
+    // Spine pin: vertices on the binding (x ≈ 0) must NEVER rotate, regardless
+    // of how the tilted-crease classifier scores them.  Without this guard a
+    // tilted axis whose origin is at (0, originY) sweeps spine vertices off
+    // the binding because rel = (0, P.y − originY, 0) is generally not
+    // parallel to the rotation axis k = (creaseDir.x, creaseDir.y, 0).
+    // Page geometry spans x ∈ [0, W]; epsilon is a small fraction of one
+    // tessellation cell so genuine flap vertices (next column over) still
+    // lift normally.
+    float spineEps = 1e-4;
+    bool isFlap = (pos.x > spineEps) && (s > 0.0);
+
+    if (isFlap && uDihedral > 0.0) {
       float t = clamp(s / max(uMaxFlapDist, 1e-6), 0.0, 1.0);
       // Same gravity-bend envelope as the legacy model — but measured from
       // the (tilted) crease line rather than the spine.

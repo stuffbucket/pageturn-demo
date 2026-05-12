@@ -375,7 +375,8 @@ class PageTurnDemo {
     if (!this.dragging) return;
     this.dragging = false;
     this.controls.enabled = true;
-    this.renderer.domElement.releasePointerCapture(e.pointerId);
+    try { this.renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) { /* already released */ }
+    this.dragPointerId = -1;
     this.renderer.domElement.style.cursor = 'default';
     emitTelemetry('drag-end', {
       dragProgress: this.dragProgress,
@@ -392,21 +393,52 @@ class PageTurnDemo {
     }
   }
 
-  private onPointerCancel(): void {
+  /**
+   * Hard-cancel a drag whose pointer the browser has yanked away from us
+   * (pointercancel from the OS, or lostpointercapture from the user dragging
+   * the cursor outside the OS window).  We do NOT route through the settle
+   * physics here — settle defers state cleanup by hundreds of milliseconds
+   * during which:
+   *   • `this.settling` is true, so `onPointerDown` rejects new gestures
+   *     (the user cannot start a fresh drag until decay completes), and
+   *   • the first settle frame still observes the stale `dragPoint` from
+   *     the last in-window pointer-move; the next frame's
+   *     `setTurningProgress` clears it, causing the crease originY to snap
+   *     from `wp.y` to `corner.y` (H/2) — visible as a pop in the curl
+   *     shape that subsequent (clean) drags then don't exhibit.
+   *
+   * Instead we immediately reset all drag state, release pointer capture,
+   * and call `book.cancelTurn()` directly.  The visible page snaps flat
+   * once, after which Pattern A (in-window) and Pattern C (post-exit)
+   * drag-loops are byte-for-byte identical in telemetry and visuals.
+   */
+  private hardCancelDrag(reason: 'pointercancel' | 'lostpointercapture'): void {
     if (!this.dragging) return;
     this.dragging = false;
     this.controls.enabled = true;
+    try { this.renderer.domElement.releasePointerCapture(this.dragPointerId); } catch (_) { /* already released */ }
+    this.dragPointerId = -1;
     this.renderer.domElement.style.cursor = 'default';
-    this.beginSettle(0);
+    emitTelemetry('drag-end', {
+      dragProgress: this.dragProgress,
+      dragVelocity: this.dragVelocity,
+      reverse: this.dragReverse,
+      canceled: true,
+      reason,
+    });
+    this.book.cancelTurn();           // clears BookState.dragPoint, isTurning, fanCount
+    this.dragProgress = 0;
+    this.dragVelocity = 0;
+    this.updateUI();
+  }
+
+  private onPointerCancel(): void {
+    this.hardCancelDrag('pointercancel');
   }
 
   /** Safety net: if pointer capture is lost unexpectedly, restore controls. */
   private onLostCapture(): void {
-    if (!this.dragging) return;
-    this.dragging = false;
-    this.controls.enabled = true;
-    this.renderer.domElement.style.cursor = 'default';
-    this.beginSettle(0);
+    this.hardCancelDrag('lostpointercapture');
   }
 
   private beginSettle(target: number): void {
@@ -460,6 +492,9 @@ class PageTurnDemo {
       this.book.cancelTurn();
       this.controls.enabled = true;
       try { this.renderer.domElement.releasePointerCapture(this.dragPointerId); } catch (_) { /* already released */ }
+      this.dragPointerId = -1;
+      this.dragProgress = 0;
+      this.dragVelocity = 0;
       this.renderer.domElement.style.cursor = 'default';
       this.updateUI();
     } else if (this.fanAnimating) {

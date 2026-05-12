@@ -88,18 +88,26 @@ describe('creaseFromDrag — alpha tilt direction', () => {
 });
 
 describe('creaseFromDrag — geometric properties', () => {
-  it('the crease line passes through both originOnEdge and the perpendicular-through-midpoint (when origin is in-page)', () => {
-    // Drag chosen so the unclamped spine intersection lies inside [-H/2, H/2]
-    // — the clamp doesn't fire and strict turn.js geometry holds.
-    const drag: Vec2 = { x: 0.0, y: -0.5 };
-    const c = creaseFromDrag(CORNER, drag, PAGE);
-    const M: Vec2 = { x: (CORNER.x + drag.x) / 2, y: (CORNER.y + drag.y) / 2 };
-    const vx = M.x - c.originOnEdge.x;
-    const vy = M.y - c.originOnEdge.y;
-    const len = Math.hypot(vx, vy);
-    if (len > 1e-6) {
-      const cross = (vx / len) * c.creaseDir.y - (vy / len) * c.creaseDir.x;
-      expect(Math.abs(cross)).toBeLessThan(1e-9);
+  it('crease direction is perpendicular to (drag − corner) for non-horizontal drags', () => {
+    // The crease line through originOnEdge always points perpendicular to
+    // the drag direction. (Originally we checked that the crease passes
+    // through the perpendicular-bisector midpoint M, but the smooth tanh
+    // squash on originY breaks that for any in-bounds nonzero rawSpineY —
+    // the perpendicularity invariant is the one that still holds.)
+    const drags: Vec2[] = [
+      { x: 0.0, y: -0.5 },
+      { x: 0.5, y: 0.2 },
+      { x: -0.3, y: 0.55 },
+      { x: 0.2, y: -0.6 },
+    ];
+    for (const drag of drags) {
+      const c = creaseFromDrag(CORNER, drag, PAGE);
+      const dx = drag.x - CORNER.x;
+      const dy = drag.y - CORNER.y;
+      const dragLen = Math.hypot(dx, dy);
+      // creaseDir · (drag − corner) should be zero (perpendicular).
+      const dot = (c.creaseDir.x * dx + c.creaseDir.y * dy) / dragLen;
+      expect(Math.abs(dot)).toBeLessThan(1e-9);
     }
   });
 

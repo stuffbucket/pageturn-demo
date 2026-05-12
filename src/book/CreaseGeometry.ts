@@ -154,14 +154,27 @@ export function creaseFromDrag(
     const Mx = (corner.x + drag.x) / 2;
     const My = (corner.y + drag.y) / 2;
     const rawSpineY = My - Mx * perpY / perpX;
-    // Clamp the spine intersection to the page bounds. If the geometric
-    // intersection lies far off-page (e.g. shallow tilt with large drag),
-    // an unclamped axis at (0, ±100) produces a rotation that whips the
-    // whole page off the spine. Clamping keeps the rotation axis on the
-    // page edge so the binding constraint is preserved; the visual is
-    // close to "crease tilted as far as it can while still touching the
-    // spine within the page".
-    originY = Math.max(-H / 2, Math.min(H / 2, rawSpineY));
+    // Smoothly squash the spine intersection toward the page edges instead
+    // of hard-clamping. A hard clamp introduces a derivative discontinuity:
+    // inside [-H/2, H/2] originY tracks rawSpineY 1:1; at the boundary it
+    // slams to a stop. The user perceives this as the constraint "breaking"
+    // (no visual response when drag would push originY further off-page)
+    // and "sticky" (drag must reverse far enough to bring rawSpineY back
+    // into bounds before any visual response resumes).
+    //
+    // Smooth function used:  originY = limit · tanh(rawSpineY / limit)
+    //   - For |rawSpineY| << limit:  originY ≈ rawSpineY (linear, identity)
+    //   - For |rawSpineY| → ∞:       originY → ±limit (asymptotic, never hits)
+    //   - Continuous and continuously differentiable everywhere.
+    //
+    // The squash starts to bite around |rawSpineY| ≈ limit, so a generous
+    // limit means the in-page region behaves identically to the unclamped
+    // model and only large off-page intersections get squashed. Using H/2
+    // as the limit means originY can asymptotically approach but never reach
+    // the page edge, preserving the binding constraint without the visual
+    // discontinuity.
+    const limit = H / 2;
+    originY = limit * Math.tanh(rawSpineY / limit);
 
     const len = Math.hypot(perpX, perpY);
     creaseDirX = perpX / len;

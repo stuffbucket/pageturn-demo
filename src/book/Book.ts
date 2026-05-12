@@ -322,6 +322,16 @@ export class Book {
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
       side: THREE.DoubleSide,
+      // Bias the turning page toward the camera in depth-buffer space so it
+      // wins the depth test against the static spread when the two surfaces
+      // are nearly co-planar (e.g. at φ≈0 / φ≈π, or where the bend envelope
+      // brings the curl close to z=0). Without this, sub-mm differences in
+      // world-space z (turning at +0.001, static at 0 / −0.001) fall below
+      // depth-buffer precision and one face's content bleeds through the
+      // other.
+      polygonOffset:      true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits:  -2,
     });
 
     // Tessellation along both X and Y so a tilted crease deforms smoothly
@@ -638,6 +648,11 @@ export class Book {
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
       side: THREE.DoubleSide,
+      // Same depth-bias as the single turning page (see spawnFlipPage).
+      // Each fan layer also gets a stacking offset on its position.z below.
+      polygonOffset:      true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits:  -2,
     });
 
     const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 48, 24);

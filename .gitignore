@@ -33,3 +33,7 @@ harness/output/
 # Screenshot captures from the screenshot-server Vite plugin
 # (POST /__screenshot). Use `git add -f` to keep specific captures.
 contrib/screenshots/
+
+# Mutation testing outputs
+reports/
+.stryker-tmp/

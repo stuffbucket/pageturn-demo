@@ -1,0 +1,27 @@
+{
+  "name": "long-press-capture",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 7000,
+  "fps": 15,
+  "url": "http://localhost:5173/harness.html?capture=1&session=harness&telemetry=1",
+  "_notes": "Holds a stationary pointerdown for >5s with capture mode enabled. The press is dispatched at (0.85, 0.05) — outside the book bounds — so main.ts onPointerDown bails before calling stopImmediatePropagation, letting the long-press listener (registered in bubble phase, AFTER main.ts's capture-phase listener) actually receive the event. The long-press timer in src/long-press-capture.ts (HOLD_THRESHOLD_MS=5000) should fire, the canvas should be POSTed to the screenshot-server (vite.config.ts), and a `screenshot-captured` telemetry event should be emitted with sessionId='harness'. Validates PRs #14 and #15 end-to-end. The file-exists assertion accepts either .png or .jpg so it survives the agent-C JPEG→PNG migration.",
+  "events": [
+    { "t": 100,  "type": "pointerdown", "x": 0.85, "y": 0.05 },
+    { "t": 5800, "type": "pointerup",   "x": 0.85, "y": 0.05 }
+  ],
+  "assertions": [
+    {
+      "type": "telemetry-event",
+      "event": "screenshot-captured",
+      "where": { "sessionId": "harness" },
+      "description": "long-press timer fired, capture pipeline emitted screenshot-captured telemetry with sessionId=harness"
+    },
+    {
+      "type": "file-exists-glob",
+      "glob": "contrib/screenshots/harness-*",
+      "extensions": [".png", ".jpg"],
+      "sidecarSessionId": "harness",
+      "description": "Vite screenshot-server wrote a file under contrib/screenshots/ whose sidecar JSON contains sessionId=harness"
+    }
+  ]
+}

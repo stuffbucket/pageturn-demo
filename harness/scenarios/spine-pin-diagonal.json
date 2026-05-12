@@ -1,0 +1,35 @@
+{
+  "name": "spine-pin-diagonal",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 1500,
+  "fps": 30,
+  "trajectories": true,
+  "_notes": "Corner-peel diagonal drag from top-right toward the spine. Drives dihedral up to roughly π/2 by ~750ms. Validates the post-#10 invariant that the spine column stays anchored at world x = 0 throughout the turn. NOTE: the trajectory assertion only exercises the harness JS reimplementation of the FLIP_VERT shader (see harness/src/bootstrap.ts → fiducialWorldPosition), so it cannot catch a regression that is purely in the inline GLSL. The pixel-min-luma assertion catches gross spine-area rendering failures, but a tight pixel-diff against a known-good baseline is the next step (see audit doc §5.1).",
+  "events": [
+    { "t": 100,  "type": "pointerdown", "x": 0.72, "y": 0.40 },
+    { "t": 200,  "type": "pointermove", "x": 0.66, "y": 0.44 },
+    { "t": 350,  "type": "pointermove", "x": 0.58, "y": 0.48 },
+    { "t": 500,  "type": "pointermove", "x": 0.52, "y": 0.50 },
+    { "t": 700,  "type": "pointermove", "x": 0.48, "y": 0.52 },
+    { "t": 900,  "type": "pointermove", "x": 0.46, "y": 0.54 },
+    { "t": 1100, "type": "pointermove", "x": 0.44, "y": 0.55 }
+  ],
+  "assertions": [
+    {
+      "type": "trajectory",
+      "fiducial": "P_0_3",
+      "axis": "x",
+      "op": "abs-max",
+      "value": 0.105,
+      "description": "Spine-adjacent fiducial (u=0.1, v=0.5) world-space |x| stays bounded by the page-local origX (=0.1). Under the spine-tear bug the GPU shader detached this column from x=0; the JS model used here is a conservative tautology — see scenario _notes.",
+      "atTApprox": 750
+    },
+    {
+      "type": "pixel-min-luma",
+      "atT": 750,
+      "region": { "x": 0.49, "y": 0.40, "w": 0.03, "h": 0.20 },
+      "minMeanLuma": 90,
+      "description": "Spine column (canvas centre, ~3% wide x 20% tall) is showing page-cream pixels at peak dihedral, not background. Catches gross spine-region rendering failures (shader compile error, full page detachment)."
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "drag-out-of-window",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 1000,
+  "fps": 30,
+  "url": "http://localhost:5173/harness.html?telemetry=1",
+  "_notes": "Simulates the user dragging the cursor out of the OS window mid-turn. The browser fires `lostpointercapture`; PR #13 routes that through `hardCancelDrag` which must emit a `drag-end` telemetry event with `{canceled: true, reason: 'lostpointercapture'}` synchronously. Pre-fix, this event was either missing or had `canceled` unset, and a stale-dragPoint settle produced a visible pop on the next gesture.",
+  "events": [
+    { "t": 100, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t": 250, "type": "pointermove", "x": 0.55, "y": 0.55 },
+    { "t": 400, "type": "pointermove", "x": 0.48, "y": 0.55 },
+    { "t": 550, "type": "raw-event",  "event": "lostpointercapture" }
+  ],
+  "assertions": [
+    {
+      "type": "telemetry-event",
+      "event": "drag-end",
+      "where": { "canceled": true, "reason": "lostpointercapture" },
+      "afterEventAtT": 550,
+      "withinMsAfterT": 100,
+      "description": "hardCancelDrag emits drag-end{canceled, reason} within 100ms of the lostpointercapture event"
+    }
+  ]
+}

@@ -55,6 +55,59 @@ Drop a JSON file in `harness/scenarios/`:
 
 `x` / `y` are fractions of viewport — robust to viewport changes.
 
+### Scenario step types
+
+| `type` | Fields | Description |
+|---|---|---|
+| `pointerdown` / `pointermove` / `pointerup` | `t, x, y` | Synthesized PointerEvent dispatched on the canvas. Pointer moves are densified to ~120 Hz. |
+| `raw-event` | `t, event` | Dispatch an arbitrary `Event` by name on the canvas. Used to simulate browser-initiated events that no real gesture can produce, e.g. `lostpointercapture`, `pointercancel`. The handler in main.ts ignores event payloads, so a bare Event suffices. |
+
+### Optional scenario fields
+
+| Field | Default | Effect |
+|---|---|---|
+| `url` | `$HARNESS_URL` | Override the page URL (use this to set `?capture=1`, `?telemetry=1`, etc.). |
+| `trajectories` | `false` | Force trajectory mode even without `--trajectories`. Required by `trajectory` assertions. |
+| `assertions` | none | Run regression assertions; see below. |
+
+### Assertions (regression-test mode)
+
+When a scenario carries an `assertions` array, the runner switches to
+**assertion mode**: it captures whichever artifacts each assertion needs
+(telemetry events, trajectory data, canvas screenshots), evaluates each
+assertion, prints pass/fail per scenario, and exits with code `2` if any
+fail. Use this for regression coverage of fixed bugs.
+
+Available assertion types (full schema in `harness/src/ccapture.d.ts`):
+
+| `type` | Purpose |
+|---|---|
+| `telemetry-event` | Match a captured `emit(...)` event by name + payload subset, optionally constrained to `withinMsAfterT` of an `afterEventAtT` anchor. Requires the page URL to include `?telemetry=1`. |
+| `file-exists-glob` | Assert that at least one file matching a single-`*` glob (relative to repo root) exists. Optional `extensions` whitelist (e.g. `[".png", ".jpg"]`) makes assertions robust to format-rename refactors. Optional `sidecarSessionId` requires a matching `<file>.json` sidecar with that sessionId. |
+| `pixel-min-luma` | Take a canvas screenshot at scenario time `atT`, sample a rectangular region in viewport-fraction coords, assert mean Rec.601 luma ≥ threshold. Use to assert "page should be visible here." |
+| `pixel-max-variance` | Same screenshot + region, assert mean adjacent-pixel luma delta ≤ threshold. Catches z-fighting / bleed-through stripes. |
+| `trajectory` | After a trajectory-mode replay, assert a fiducial position (`P_<i>_<j>`) along an axis (`x`/`y`/`z`) satisfies a min/max bound, optionally pinned to the sample closest to `atTApprox`. Note: trajectories use the JS reimplementation of FLIP_VERT, not the GPU shader, so they do not catch GPU-only regressions — pair with a `pixel-*` assertion when the bug lives in GLSL. |
+
+Telemetry capture works by patching `navigator.sendBeacon` and `fetch`
+in `bootstrap.ts` *before* `src/main.ts` is imported; the captured
+event stream is exposed to the runner via `window.__harness.drainTelemetry()`.
+
+### Regression scenarios shipped with this repo
+
+| Scenario | What it covers |
+|---|---|
+| `spine-pin-diagonal` | PR #10 — corner-peel diagonal drag; trajectory + spine-area luma. |
+| `bleed-through-mid-fold` | PR #12 — mid-fold pixel-variance check on the turning page. |
+| `drag-out-of-window` | PR #13 — `lostpointercapture` mid-drag → `drag-end{canceled, reason}` telemetry within 100ms. |
+| `long-press-capture` | PRs #14/#15 — 5.5s hold with `?capture=1&session=harness` produces a `screenshot-captured` event AND a file under `contrib/screenshots/`. |
+
+Run a single regression scenario locally:
+
+```bash
+docker compose -p audit-harness -f harness/docker-compose.yml \
+  run --rm harness sh -c 'cd harness && npx tsx runner/run.ts spine-pin-diagonal'
+```
+
 ## How it works
 
 1. Playwright opens `harness.html` against a running Vite dev server.

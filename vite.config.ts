@@ -21,6 +21,120 @@ const TELEMETRY_LOG_PATH =
 const SCREENSHOT_DIR = path.resolve(__dirname, 'contrib/screenshots')
 
 // ---------------------------------------------------------------------------
+// build-info plugin types — kept in sync with src/build-info.d.ts. The schema
+// is intentionally duplicated (not imported) so vite.config.ts has no runtime
+// dependency on the src tree, and the browser-side .d.ts can be authoritative.
+// ---------------------------------------------------------------------------
+interface BuildInfo {
+  commit: string
+  commitShort: string
+  commitDate: string
+  branch: string
+  dirty: boolean
+  worktreePath: string
+  worktreeLabel: string
+  remoteUrl: string
+  repoSlug: string
+  pr: { number: number; title: string; url: string } | null
+  serverStartedAt: string
+}
+
+/**
+ * Normalize git remote URLs to canonical https://github.com/owner/repo form
+ * (drop trailing .git, convert SSH git@github.com:owner/repo to https). For
+ * non-GitHub or unparseable remotes we return the input unchanged so we don't
+ * silently mangle data.
+ */
+function normalizeRemoteUrl(raw: string): string {
+  if (!raw) return ''
+  let s = raw.trim()
+  // git@github.com:owner/repo(.git)?
+  const ssh = s.match(/^git@([^:]+):(.+?)(?:\.git)?$/)
+  if (ssh) s = `https://${ssh[1]}/${ssh[2]}`
+  // ssh://git@github.com/owner/repo(.git)?
+  const sshUrl = s.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/)
+  if (sshUrl) s = `https://${sshUrl[1]}/${sshUrl[2]}`
+  // Strip trailing .git on https
+  s = s.replace(/\.git$/, '')
+  return s
+}
+
+function extractRepoSlug(normalizedUrl: string): string {
+  const m = normalizedUrl.match(/^https?:\/\/[^/]+\/([^/]+\/[^/]+)$/)
+  return m ? m[1] : ''
+}
+
+/**
+ * Derive a human-readable worktree label from the worktree's absolute path.
+ * - "main"          if path doesn't sit inside a `.claude/worktrees/` segment
+ * - "agent-<short>" if path matches `.claude/worktrees/agent-<id>`
+ *                   (short = first 8 chars of <id>)
+ * - "other"         for any other `.claude/worktrees/<name>` arrangement
+ */
+function deriveWorktreeLabel(worktreePath: string): string {
+  const m = worktreePath.match(/[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)/)
+  if (!m) return 'main'
+  const dirName = m[1]
+  const agent = dirName.match(/^agent-(.+)$/)
+  if (agent) return `agent-${agent[1].slice(0, 8)}`
+  return 'other'
+}
+
+/**
+ * Capture build info via shell once at server start. The result is cached for
+ * the lifetime of the dev process — refreshing on a timer would not catch
+ * commits while the server is running anyway (HMR triggers a full reload of
+ * the virtual module's importers, which is plenty for dev), and a Vite
+ * restart re-runs this. Failures degrade gracefully: each shell call is
+ * wrapped in safeGit; gh PR lookup may return empty if gh is missing or
+ * unauthenticated.
+ */
+function captureBuildInfo(): BuildInfo {
+  const commit = safeGit('git rev-parse HEAD')
+  const commitShort = safeGit('git rev-parse --short HEAD')
+  // abbrev-ref returns "HEAD" when in detached state — surface that verbatim.
+  const branch = safeGit('git rev-parse --abbrev-ref HEAD')
+  const worktreePath = safeGit('git rev-parse --show-toplevel')
+  const dirty = safeGit('git status --porcelain').length > 0
+  const remoteUrlRaw = safeGit('git config --get remote.origin.url')
+  const remoteUrl = normalizeRemoteUrl(remoteUrlRaw)
+  const repoSlug = extractRepoSlug(remoteUrl)
+  const commitDate = safeGit('git log -1 --format=%cI HEAD')
+  const worktreeLabel = deriveWorktreeLabel(worktreePath)
+
+  let pr: BuildInfo['pr'] = null
+  if (branch && branch !== 'HEAD') {
+    const ghOut = safeGit(
+      `gh pr list --head ${JSON.stringify(branch)} --state open --json number,title,url --jq '.[0] // empty'`,
+    )
+    if (ghOut) {
+      try {
+        const parsed = JSON.parse(ghOut) as { number?: number; title?: string; url?: string }
+        if (typeof parsed.number === 'number' && typeof parsed.title === 'string' && typeof parsed.url === 'string') {
+          pr = { number: parsed.number, title: parsed.title, url: parsed.url }
+        }
+      } catch {
+        // gh produced something unparseable; leave pr = null.
+      }
+    }
+  }
+
+  return {
+    commit,
+    commitShort,
+    commitDate,
+    branch,
+    dirty,
+    worktreePath,
+    worktreeLabel,
+    remoteUrl,
+    repoSlug,
+    pr,
+    serverStartedAt: new Date().toISOString(),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Schema validation for POST /__screenshot. Kept inline (no zod dep) — the
 // browser-side agent owns the matching TypeScript interface; this validates
 // the parsed JSON shape before we touch disk.
@@ -254,6 +368,52 @@ export default defineConfig({
     target: 'esnext',
   },
   plugins: [
+    (() => {
+      // build-info — captures git/branch/PR/worktree state once at server
+      // start and exposes it (a) as a virtual ESM module `virtual:build-info`
+      // for browser code, and (b) as a JSON HTTP endpoint at /__build-info
+      // for ad-hoc shell consumers (curl). Schema is mirrored in
+      // src/build-info.d.ts; the sibling HUD plugin imports the virtual
+      // module to render an on-page badge.
+      //
+      // Caching: captured once per server boot. A timer refresh would not
+      // help — Brian's workflow restarts vite when switching contexts, and
+      // gh API calls aren't free.
+      let info: BuildInfo
+      return {
+        name: 'build-info',
+        configResolved() {
+          info = captureBuildInfo()
+        },
+        resolveId(id: string) {
+          if (id === 'virtual:build-info') return '\0virtual:build-info'
+          return null
+        },
+        load(id: string) {
+          if (id === '\0virtual:build-info') {
+            return `export const buildInfo = ${JSON.stringify(info)};\n`
+          }
+          return null
+        },
+        configureServer(server) {
+          server.config.logger.info(
+            `[build-info] ${info.worktreeLabel} ${info.commitShort}${info.dirty ? '*' : ''} `
+            + `branch=${info.branch}${info.pr ? ` PR#${info.pr.number}` : ''}`,
+          )
+          server.middlewares.use('/__build-info', (req, res) => {
+            if (req.method && req.method !== 'GET') {
+              res.statusCode = 405
+              res.end()
+              return
+            }
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'application/json')
+            res.setHeader('Cache-Control', 'no-store')
+            res.end(JSON.stringify(info))
+          })
+        },
+      }
+    })(),
     {
       // Large self-hosted media (e.g. big-buck-bunny.mp4) shouldn't be
       // re-downloaded on every dev reload. Without an explicit Cache-Control

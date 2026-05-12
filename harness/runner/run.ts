@@ -24,6 +24,7 @@ import type {
   TrajectoryResult,
   PixelLumaAssertion,
   PixelVarianceAssertion,
+  PixelEdgeTransitionsAssertion,
 } from '../src/ccapture.js';
 import { evaluate as evalAssertion, AssertionContext } from './assertions.js';
 
@@ -114,8 +115,8 @@ async function runAssertionScenario(
   const needTrajectory = scenario.assertions!.some((a) => a.type === 'trajectory') ||
                          scenario.trajectories === true;
   const pixelAssertions = scenario.assertions!.filter(
-    (a): a is PixelLumaAssertion | PixelVarianceAssertion =>
-      a.type === 'pixel-min-luma' || a.type === 'pixel-max-variance',
+    (a): a is PixelLumaAssertion | PixelVarianceAssertion | PixelEdgeTransitionsAssertion =>
+      a.type === 'pixel-min-luma' || a.type === 'pixel-max-variance' || a.type === 'pixel-edge-transitions',
   );
 
   let telemetry: CapturedTelemetryEvent[] = [];

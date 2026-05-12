@@ -29,9 +29,9 @@ Drag is **2D**. The crease line tilts with drag direction (see `CreaseGeometry.t
 
 The vertex shader inlined in `Book.ts` still rides on
 ```
-φ(t) = uAngle + uBendAmount * t * sin(2.0 * uAngle)
+φ(t) = uDihedral + uBendAmount * t * sin(2.0 * uDihedral)
 ```
-with `uBendAmount = 0.4`, but t is now distance along the *tilted* crease normal. Polygon-offset is applied **only** to the turning-page front face; the back face uses honest depth (issue #31 tracks remaining bleed-through). The fragment shader uses a smoothstep flap classifier for a continuous front/back blend.
+with `uBendAmount = 0.4`, but t is now distance along the *tilted* crease normal. The turning-page `ShaderMaterial` is `DoubleSide` with `polygonOffset` enabled (factor/units = −2) so the curl wins the depth test against the static spread when surfaces are nearly co-planar; issue #31 tracks remaining bleed-through. The **vertex** shader uses a smoothstep across `s = 0` (the tilted-crease boundary) to dissolve houndstooth artifacts at tilted creases — the fragment shader is a plain `gl_FrontFacing` front/back switch.
 
 Two static spread meshes always show the resting state; a third `turningPageMesh` is spawned during animation so abort/cancel logic is atomic. The crease shadow is a separate Gaussian-along-spine mesh that fades with turn progress.
 
@@ -137,7 +137,7 @@ Live list of issues — verify with `gh issue list --state open` before assuming
 
 ## Pre-existing oddities
 
-- **Popup feature is disabled** by design — see ADR-0001. The 8(+2) skipped tests in `Book.test.ts` are intentional, not failing. `createPopup` carries a `@ts-expect-error` annotation that will self-clean when the popup ships.
+- **Popup feature is disabled** by design — see ADR-0001. The 10 skipped tests in `Book.test.ts` (the entire `describe.skip('Book - Fan × Popup', …)` block) are intentional, not failing. `createPopup` carries a `@ts-expect-error` annotation that will self-clean when the popup ships.
 - **Big Buck Bunny video is not in the repo.** After a fresh clone, fetch it manually:
   ```bash
   curl -L -o public/videos/big-buck-bunny.mp4 \

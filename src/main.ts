@@ -49,6 +49,7 @@ class PageTurnDemo {
   private settleTarget   = 0;   // 0 (cancel) or 1 (complete)
   private settleVelocity = 0;
   private dragStartX     = 0;   // world X at drag start (projected onto XZ plane)
+  private dragStartY     = 0;   // page-local Y at drag start (for tilted-crease drag)
   private dragPageWidth  = 1.0;
   private dragPointerId  = -1;   // pointer ID for releasing capture on cancel
   private lastDragTime   = 0;   // timestamp of last pointermove (for velocity)
@@ -59,6 +60,8 @@ class PageTurnDemo {
   );
   private raycaster = new THREE.Raycaster();
   private pointer   = new THREE.Vector2();
+  // Scratch vector reused by pointerWorldXY to avoid per-move allocations.
+  private _hitVec   = new THREE.Vector3();
 
   private frameCount    = 0;
   private fps           = 0;
@@ -172,17 +175,24 @@ class PageTurnDemo {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  /** Project pointer onto the book's XY plane; returns world X or null. */
-  private pointerWorldX(clientX: number, clientY: number): number | null {
+  /**
+   * Project pointer onto the tilted book surface and return the result in
+   * the book group's local (un-tilted) page-plane coords: x along the spine-
+   * to-edge axis, y along the spine.  Null if the ray misses the plane.
+   */
+  private pointerPageLocal(clientX: number, clientY: number): { x: number; y: number } | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(
       ((clientX - rect.left)  / rect.width)  * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const target = new THREE.Vector3();
-    const hit = this.raycaster.ray.intersectPlane(this.hitPlane, target);
-    return hit ? target.x : null;
+    const hit = this.raycaster.ray.intersectPlane(this.hitPlane, this._hitVec);
+    if (!hit) return null;
+    // Book group rotation is -BOOK_TILT around X.  For a point on the tilted
+    // page plane (local z = 0), local.y = world.y / cos(BOOK_TILT).
+    const cosT = Math.cos(BOOK_TILT);
+    return { x: this._hitVec.x, y: this._hitVec.y / cosT };
   }
 
   // ── Event handlers ─────────────────────────────────────────────────────────
@@ -223,8 +233,9 @@ class PageTurnDemo {
     if (e.button !== 0) return;  // primary button only
     if (this.timedAnimating || this.dragging || this.settling || this.fanAnimating) return;
 
-    const wx = this.pointerWorldX(e.clientX, e.clientY);
-    if (wx === null) return;
+    const wp = this.pointerPageLocal(e.clientX, e.clientY);
+    if (wp === null) return;
+    const wx = wp.x;
 
     const hw = this.dragPageWidth;
     const state = this.book.getState();
@@ -247,6 +258,7 @@ class PageTurnDemo {
     this.dragProgress = 0;
     this.dragVelocity = 0;
     this.dragStartX   = wx;
+    this.dragStartY   = wp.y;
     this.dragPointerId = e.pointerId;
     this.lastDragTime = performance.now();
     this.controls.enabled = false;
@@ -255,35 +267,43 @@ class PageTurnDemo {
   }
 
   private onPointerMove(e: PointerEvent): void {
-    const wx = this.pointerWorldX(e.clientX, e.clientY);
+    const wp = this.pointerPageLocal(e.clientX, e.clientY);
 
     if (!this.dragging) {
       // Update hover cursor when nothing is animated
-      if (wx !== null && !this.timedAnimating && !this.settling) {
+      if (wp !== null && !this.timedAnimating && !this.settling) {
         const hw    = this.dragPageWidth;
         const state = this.book.getState();
-        const over  = (wx >= 0 && wx <= hw && state.canTurnForward()) ||
-                      (wx >= -hw && wx < 0  && state.canTurnBackward());
+        const over  = (wp.x >= 0 && wp.x <= hw && state.canTurnForward()) ||
+                      (wp.x >= -hw && wp.x < 0  && state.canTurnBackward());
         this.renderer.domElement.style.cursor = over ? 'grab' : 'default';
       }
       return;
     }
 
-    if (wx === null) return;
+    if (wp === null) return;
 
-    const delta = this.dragStartX - wx;
-    const raw   = this.dragReverse
-      ? (wx - this.dragStartX) / this.dragPageWidth
-      : delta / this.dragPageWidth;
+    // Tilted-crease drag: track the actual 2D pointer offset and translate it
+    // into a page-local drag point.  The conceptual corner being grabbed is
+    // (+W, H/2) for forward and (−W, H/2) for reverse — this maps "no motion"
+    // to the correct starting dihedral (0 for forward, π for reverse).
+    const W = this.dragPageWidth;
+    const dx = wp.x - this.dragStartX;
+    const dy = wp.y - this.dragStartY;
+    const cornerX = this.dragReverse ? -W : W;
+    const dragPx = cornerX + dx;
+    const dragPy = (this.book.getPageHeight() / 2) + dy;
 
+    this.book.updateTurningDrag(dragPx, dragPy);
+
+    // Velocity for flick detection — derived from progress (phi/π) deltas.
     const prev = this.dragProgress;
-    this.dragProgress = Math.max(0, Math.min(1, raw));
-    // Compute velocity from real elapsed time, not frame count
+    this.dragProgress = this.book.getState().getTurningProgress();
     const now = performance.now();
     const elapsed = (now - this.lastDragTime) / 1000;
     this.lastDragTime = now;
     this.dragVelocity = elapsed > 0.001 ? (this.dragProgress - prev) / elapsed : 0;
-    this.book.updateTurningPage(this.dragProgress);
+
     this.updateUI();
   }
 

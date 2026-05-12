@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { BookState, DEFAULT_BOOK_MATERIAL, maxFanCount } from './BookState';
 import type { BookMaterial } from './BookState';
+import { creaseDirection, type Crease, type Vec2 } from './CreaseGeometry';
 import { generateBookTextures, TexturePool } from '../textures/atlas';
 
 export interface BookParams {
@@ -22,42 +23,53 @@ export interface BookParams {
   material?: BookMaterial;
 }
 
-// Vertex shader: per-vertex Y-rotation with gravity-based free-edge lag.
+// Vertex shader: tilted-crease (turn.js-inspired) page fold.
 //
-// phi(t) = phi_spine + bendAmount * t * sin(-2 * phi_spine)
+// The folded "flap" is the half-plane on the corner-side of the crease line
+// (uCreaseOrigin, uCreaseDir).  Vertices on the spine-side stay flat; flap
+// vertices are rotated about the crease axis (in 3D, a horizontal line through
+// uCreaseOrigin in the page plane, direction uCreaseDir, k.z = 0).
 //
-// sin(-2*phi) provides the correct signed envelope for the full arc:
-//   phi in (0,  -π/2): sin > 0 → vertex angle less negative → edge lags behind spine
-//   phi = -π/2:        sin = 0 → no correction, page straight while vertical
-//   phi in (-π/2, -π): sin < 0 → vertex angle more negative → edge leads (falls ahead)
-// This is the same formula for both forward and reverse turns.
+// The bend envelope sin(2·dihedral) is preserved from the original model but
+// applied to a per-vertex t = (signed flap distance) / uMaxFlapDist, so the
+// free edge lags / leads as before.
+//
+// Rotation by -phi is applied (matches the original "lift toward +z" sign
+// convention for forward turns).  uCreaseDir always has y >= 0.
 const FLIP_VERT = /* glsl */`
-  uniform float uAngle;      // spine angle: 0 → -π (forward) or -π → 0 (reverse)
+  uniform vec2 uCreaseOrigin;
+  uniform vec2 uCreaseDir;
+  uniform vec2 uCornerDir;     // unit, points from crease toward grabbed corner
+  uniform float uMaxFlapDist;
+  uniform float uDihedral;
   uniform float uBendAmount;
-  uniform float uPageWidth;
   varying vec2 vUv;
 
   void main() {
     vUv = uv;
     vec3 pos = position;
 
-    float t = pos.x / uPageWidth;  // 0 at spine, 1 at free edge
+    vec2 rel2 = pos.xy - uCreaseOrigin;
+    float s = dot(rel2, uCornerDir);
 
-    // Center-of-gravity bending: edge sags toward nearest surface.
-    //
-    // sin(2*phi) flips sign at phi=-PI/2 (90 deg):
-    //   Lift (0 to -PI/2): negative correction → edge leads → sags toward right  (
-    //   Fall (-PI/2 to -PI): positive correction → edge lags → sags toward left  )
-    // Together: ( ) shape throughout the turn.
-    //
-    // bendAmount must be < 0.5 so the edge velocity never reverses:
-    //   d(phi_edge)/d(phi_spine) = 1 + 2*A*cos(2*phi) >= 1 - 2*A > 0
-    //   With A=0.4: minimum velocity = 0.2 > 0. No stall, no wag.
-    float phi = uAngle + uBendAmount * t * sin(2.0 * uAngle);
+    if (s > 0.0 && uDihedral > 0.0) {
+      float t = clamp(s / max(uMaxFlapDist, 1e-6), 0.0, 1.0);
+      // Same gravity-bend envelope as the legacy model — but measured from
+      // the (tilted) crease line rather than the spine.
+      float phi = uDihedral + uBendAmount * t * sin(2.0 * uDihedral);
 
-    float origX = pos.x;
-    pos.x =  origX * cos(phi);
-    pos.z = -origX * sin(phi);
+      vec3 k = vec3(uCreaseDir, 0.0);
+      vec3 rel = pos - vec3(uCreaseOrigin, 0.0);
+
+      // Negative angle so the flap lifts toward +z (matches the legacy
+      // forward-turn convention; uCreaseDir.y >= 0).
+      float ang = -phi;
+      float c = cos(ang);
+      float si = sin(ang);
+      vec3 rotated = rel * c + cross(k, rel) * si + k * dot(k, rel) * (1.0 - c);
+
+      pos = vec3(uCreaseOrigin, 0.0) + rotated;
+    }
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
@@ -102,7 +114,6 @@ export class Book {
 
   // Turning page mesh — exists only during an animation.
   private turningPageMesh: THREE.Mesh | null = null;
-  private isReverseTurn = false;
 
   // Fan turn: multiple pages turning simultaneously with stagger.
   private fanPages: Array<{ mesh: THREE.Mesh; delay: number }> = [];
@@ -130,6 +141,7 @@ export class Book {
     this.material   = params.material   ?? DEFAULT_BOOK_MATERIAL;
 
     this.state    = new BookState(this.numLeaves);
+    this.state.setPageSize(this.pageWidth, this.pageHeight);
     this.group    = new THREE.Group();
     this.textures = generateBookTextures(this.numLeaves * 2, params.textureSize ?? 512);
 
@@ -290,33 +302,80 @@ export class Book {
     this.group.add(this.popupGroup);
   }
 
-  /** Spawn a flipping-page mesh with per-vertex bending shader. */
+  /** Spawn a flipping-page mesh with the tilted-crease bending shader. */
   private spawnFlipPage(
     frontTex: THREE.Texture,
     backTex: THREE.Texture,
-    startAngle: number,  // 0 for forward, -Math.PI for reverse
+    _startAngle: number,  // legacy: 0 = forward start, -π = reverse start (consumed implicitly via state.phi)
   ): void {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        frontTexture: { value: frontTex },
-        backTexture:  { value: backTex  },
-        uAngle:       { value: startAngle },
-        uBendAmount:  { value: 0.4 },
-        uPageWidth:   { value: this.pageWidth },
+        frontTexture:   { value: frontTex },
+        backTexture:    { value: backTex  },
+        uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
+        uCreaseDir:     { value: new THREE.Vector2(0, 1) },
+        uCornerDir:     { value: new THREE.Vector2(1, 0) },
+        uMaxFlapDist:   { value: 0 },
+        uDihedral:      { value: 0 },
+        uBendAmount:    { value: 0.4 },
       },
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
       side: THREE.DoubleSide,
     });
 
-    // 64 X segments for smooth curvature along the page width.
-    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 64, 1);
+    // Tessellation along both X and Y so a tilted crease deforms smoothly
+    // across the whole page surface, not just along the spine direction.
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 48, 24);
     geo.translate(this.pageWidth / 2, 0, 0);
 
     this.turningPageMesh = new THREE.Mesh(geo, mat);
     this.turningPageMesh.position.z = 0.001;
     this.group.add(this.turningPageMesh);
 
+    // Initialise uniforms from current crease so the first rendered frame is
+    // already correctly oriented.
+    this.applyCreaseUniforms(mat, this.state.getCrease());
+  }
+
+  /**
+   * Push a Crease (from BookState) into the per-page shader uniforms.
+   * Computes the corner-side direction and a max-flap-distance for bend
+   * normalisation.  Called every frame for the turning page(s).
+   */
+  private applyCreaseUniforms(mat: THREE.ShaderMaterial, crease: Crease): void {
+    const corner: Vec2 = { x: this.pageWidth, y: this.pageHeight / 2 };
+    const drag = crease.farPoint;
+
+    const creaseDir = creaseDirection(corner, drag);
+
+    // cornerDir = unit (corner − originOnEdge), perpendicular to creaseDir.
+    let cdx = corner.x - crease.originOnEdge.x;
+    let cdy = corner.y - crease.originOnEdge.y;
+    const cdLen = Math.hypot(cdx, cdy);
+    if (cdLen < 1e-9) { cdx = 1; cdy = 0; } else { cdx /= cdLen; cdy /= cdLen; }
+
+    // Max projection of any of the four page corners onto cornerDir, measured
+    // from the crease origin.  Bounds the flap region for bend normalisation.
+    const W = this.pageWidth;
+    const H = this.pageHeight;
+    const pageCorners: Vec2[] = [
+      { x: 0, y: -H / 2 }, { x: 0, y: H / 2 },
+      { x: W, y: -H / 2 }, { x: W, y: H / 2 },
+    ];
+    let maxFlap = 0;
+    for (const pc of pageCorners) {
+      const s = (pc.x - crease.originOnEdge.x) * cdx + (pc.y - crease.originOnEdge.y) * cdy;
+      if (s > maxFlap) maxFlap = s;
+    }
+    if (maxFlap < 1e-6) maxFlap = 1e-6;
+
+    const u = mat.uniforms;
+    (u.uCreaseOrigin.value as THREE.Vector2).set(crease.originOnEdge.x, crease.originOnEdge.y);
+    (u.uCreaseDir.value as THREE.Vector2).set(creaseDir.x, creaseDir.y);
+    (u.uCornerDir.value as THREE.Vector2).set(cdx, cdy);
+    u.uMaxFlapDist.value = maxFlap;
+    u.uDihedral.value = crease.dihedral;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -344,7 +403,6 @@ export class Book {
     }
 
     this.state.startTurn();
-    this.isReverseTurn = false;
 
     // The flip lifts the right page — the destination right is immediately
     // visible underneath it from the very first frame.
@@ -352,6 +410,23 @@ export class Book {
 
     this.spawnFlipPage(frontTex, backTex, 0);
     return true;
+  }
+
+  /**
+   * Drive a turn from a 2D drag point (in page-local coords for the right
+   * page: spine at x=0, free edge at x=pageWidth, top at y=+pageHeight/2).
+   * Used by the interactive drag handler to get true tilted-crease curl.
+   */
+  updateTurningDrag(pageLocalX: number, pageLocalY: number): void {
+    this.state.setDragPoint(pageLocalX, pageLocalY);
+    if (this.turningPageMesh) {
+      this.applyCreaseUniforms(
+        this.turningPageMesh.material as THREE.ShaderMaterial,
+        this.state.getCrease(),
+      );
+    }
+    const creaseOpacity = Math.sin(Math.PI * this.state.getTurningProgress());
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = creaseOpacity;
   }
 
   startReverseTurn(): boolean {
@@ -379,7 +454,6 @@ export class Book {
     }
 
     this.state.startReverseTurn();   // decrements j
-    this.isReverseTurn = true;
 
     // The flip lifts the left page — the destination left is immediately
     // visible underneath it from the very first frame.
@@ -395,10 +469,10 @@ export class Book {
   updateTurningPage(progress: number): void {
     this.state.setTurningProgress(progress);
     if (this.turningPageMesh) {
-      const angle = this.isReverseTurn
-        ? -Math.PI * (1 - progress)
-        : -Math.PI * progress;
-      (this.turningPageMesh.material as THREE.ShaderMaterial).uniforms.uAngle.value = angle;
+      this.applyCreaseUniforms(
+        this.turningPageMesh.material as THREE.ShaderMaterial,
+        this.state.getCrease(),
+      );
     }
     // Crease shadow: bell curve peaking at mid-turn, zero when flat
     const creaseOpacity = Math.sin(Math.PI * progress);
@@ -555,24 +629,27 @@ export class Book {
   private spawnFanPage(
     frontTex: THREE.Texture,
     backTex: THREE.Texture,
-    startAngle: number,
+    _startAngle: number,
     delay: number,
     layer: number,
   ): void {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        frontTexture: { value: frontTex },
-        backTexture:  { value: backTex  },
-        uAngle:       { value: startAngle },
-        uBendAmount:  { value: 0.4 },
-        uPageWidth:   { value: this.pageWidth },
+        frontTexture:   { value: frontTex },
+        backTexture:    { value: backTex  },
+        uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
+        uCreaseDir:     { value: new THREE.Vector2(0, 1) },
+        uCornerDir:     { value: new THREE.Vector2(1, 0) },
+        uMaxFlapDist:   { value: this.pageWidth },
+        uDihedral:      { value: 0 },
+        uBendAmount:    { value: 0.4 },
       },
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
       side: THREE.DoubleSide,
     });
 
-    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 64, 1);
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 48, 24);
     geo.translate(this.pageWidth / 2, 0, 0);
 
     const mesh = new THREE.Mesh(geo, mat);
@@ -586,12 +663,23 @@ export class Book {
   updateFanTurn(progress: number): void {
     this.state.setTurningProgress(progress);
 
+    const W = this.pageWidth;
+    const H = this.pageHeight;
+    const corner: Vec2 = { x: W, y: H / 2 };
     for (const page of this.fanPages) {
       const p = Math.max(0, Math.min(1, (progress - page.delay) / (1 - page.delay)));
-      const angle = this.fanReverse
-        ? -Math.PI * (1 - p)
-        : -Math.PI * p;
-      (page.mesh.material as THREE.ShaderMaterial).uniforms.uAngle.value = angle;
+      const phi = this.fanReverse ? Math.PI * (1 - p) : Math.PI * p;
+      // Synthesise a horizontal drag (vertical crease) at distance 2W·(phi/π)
+      // so the crease reaches the spine at progress = 1.
+      const dragX = corner.x - 2 * W * (phi / Math.PI);
+      const synthCrease = {
+        alpha: -Math.PI / 2,
+        originOnEdge: { x: (corner.x + dragX) / 2, y: corner.y },
+        farPoint: { x: dragX, y: corner.y },
+        dihedral: Math.PI * Math.min(1, Math.abs((corner.x - dragX) / W)),
+        progress: Math.abs(phi / Math.PI),
+      };
+      this.applyCreaseUniforms(page.mesh.material as THREE.ShaderMaterial, synthCrease);
     }
 
     // Crease shadow: bell curve based on mean page progress

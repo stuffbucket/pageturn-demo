@@ -266,18 +266,18 @@ describe('Book - Physics Verification', () => {
       book.startTurn();
       book.updateTurningPage(0.5); // Mid-turn
 
-      // The current flat-flip model does deformation on the GPU via a vertex
-      // shader.  We can verify the turning page exists and has the correct
-      // uAngle uniform set to a non-zero value (mid-turn = -π/2).
+      // The current tilted-crease model does deformation on the GPU via a
+      // vertex shader.  Verify the turning page exists and has uDihedral set
+      // to a non-zero value (mid-turn = π/2).
       const group = book.getGroup();
       let foundShaderAngle = false;
 
       group.traverse((node) => {
         if (node instanceof THREE.Mesh) {
           const mat = node.material;
-          if (mat instanceof THREE.ShaderMaterial && mat.uniforms.uAngle) {
-            const angle = mat.uniforms.uAngle.value as number;
-            if (Math.abs(angle) > 0.1) {
+          if (mat instanceof THREE.ShaderMaterial && mat.uniforms.uDihedral) {
+            const dihedral = mat.uniforms.uDihedral.value as number;
+            if (Math.abs(dihedral) > 0.1) {
               foundShaderAngle = true;
             }
           }
@@ -407,13 +407,13 @@ function goToSpread(book: Book, target: number): void {
   }
 }
 
-/** Count how many fan page meshes (ShaderMaterial with uAngle) are in the group. */
+/** Count how many fan page meshes (ShaderMaterial with uDihedral) are in the group. */
 function countFanPages(book: Book): number {
   let count = 0;
   book.getGroup().traverse((node) => {
     if (node instanceof THREE.Mesh) {
       const mat = node.material;
-      if (mat instanceof THREE.ShaderMaterial && mat.uniforms.uAngle) {
+      if (mat instanceof THREE.ShaderMaterial && mat.uniforms.uDihedral) {
         count++;
       }
     }

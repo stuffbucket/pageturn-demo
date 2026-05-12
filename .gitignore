@@ -37,3 +37,6 @@ contrib/screenshots/
 # Mutation testing outputs
 reports/
 .stryker-tmp/
+
+# Per-developer state for scripts/test-mutation-if-changed.sh
+.stryker-last-run

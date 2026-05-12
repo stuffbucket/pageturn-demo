@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "test:mutation:if-changed": "bash scripts/test-mutation-if-changed.sh"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

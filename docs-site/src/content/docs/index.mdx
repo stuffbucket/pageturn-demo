@@ -1,0 +1,38 @@
+---
+title: pageturn-demo
+description: An interactive 3D book built with Three.js — design notes, PRDs, architecture, and testing playbook.
+template: splash
+hero:
+  tagline: An interactive 3D book built with Three.js, TypeScript, and Vite. Drag-to-turn pages with physics settle, a gravity-based curl shader, rich procedural content, and a Big Buck Bunny video spread.
+  actions:
+    - text: Quickstart
+      link: /pageturn-demo/get-started/quickstart/
+      icon: right-arrow
+    - text: Source on GitHub
+      link: https://github.com/stuffbucket/pageturn-demo
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Explore the docs
+
+<CardGrid stagger>
+  <Card title="Architecture" icon="puzzle">
+    How the renderer, state machine, crease geometry, capture, and telemetry pipelines fit together.
+    [Start with the overview &rarr;](/pageturn-demo/architecture/overview/)
+  </Card>
+  <Card title="Design (PRDs)" icon="document">
+    Product / engineering requirements for the page model, settle physics, and inextensibility constraint.
+    [Page model &rarr;](/pageturn-demo/design/page-model/)
+  </Card>
+  <Card title="Testing" icon="approve-check">
+    Test suite audit, mutation testing, harness scenarios, and the inner-loop debugging recipe.
+    [Inner-loop debugging &rarr;](/pageturn-demo/get-started/inner-loop-debugging/)
+  </Card>
+  <Card title="Reference" icon="setting">
+    The URL flag matrix and the npm script catalog.
+    [URL flags &rarr;](/pageturn-demo/reference/url-flag-matrix/)
+  </Card>
+</CardGrid>

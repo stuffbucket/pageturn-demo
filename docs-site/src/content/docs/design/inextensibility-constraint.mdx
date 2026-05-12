@@ -1,0 +1,49 @@
+---
+title: "PRD: Inextensibility constraint"
+description: Standalone summary of the geodesic-distance invariant FR-P1 — the contract every page deformation must honor.
+---
+
+:::note[Context]
+This page is the standalone summary of the inextensibility invariant defined in the [page model PRD](/pageturn-demo/design/page-model/) as **FR-P1**. It exists separately because inextensibility is the constraint every other page-deformation feature (settle, fan, drag, popup, future shaders) must respect, and we want a short, link-target-friendly statement of the contract that doesn't require reading the full developable-surface PRD.
+:::
+
+## The invariant (FR-P1, verbatim)
+
+> At any moment during any animation (drag, timed turn, fan turn, settle), for every pair of fiducial markers on the lifted flap, the geodesic distance between them on the rendered page surface shall equal their rest-configuration geodesic distance to within 1.0% (tolerance scaled by `pageWidth`).
+
+## Why it matters
+
+Paper has near-zero membrane strain. A user looking at a mid-drag screenshot of the current `sin(2φ)` shader correctly identified the artifact as "the page stretches as a thin elastic surface." The fix is geometric, not perceptual: replace the per-vertex angular hack with a true cylindrical isometry whose axis is parallel to the (tilted) crease.
+
+See [Architecture &rarr; Tilted-crease model](/pageturn-demo/architecture/tilted-crease-model/) for what `creaseDir` and `originOnEdge` mean today, and the [page model PRD](/pageturn-demo/design/page-model/) for the full math (FR-P2 through FR-P5).
+
+## How we measure it
+
+The 35-fiducial trajectory dataset (`harness/baselines/`, 5×7 grid at known UVs in `src/textures/atlas.ts`) is the natural test bed. The validation procedure from the page-model PRD §1:
+
+> Extend the harness runner to compute, per frame, the pairwise straight-line distance between fiducials in page-local 3D space (which equals geodesic distance on a developable surface up to the bend angle they straddle, in the small-patch limit). The frame-to-rest ratio shall lie in `[0.99, 1.01]` for all pairs not straddling the crease exemption zone (FR-P5).
+
+Concretely: 35 fiducials × 34 / 2 = **595 pairwise distances**, evaluated every captured frame, expected ratio in `[0.99, 1.01]`. Pairs straddling the ±1 mm crease exemption zone are excluded from the assertion (FR-P5).
+
+## Crease-region exemption (FR-P5, verbatim)
+
+> A small neighborhood of the crease (width configurable, default ~ 1 mm in page-local units) is exempt from the zero-strain constraint, since real paper folds plastically there. This exemption is bounded and documented; it is not a license for general non-developable deformation away from the crease.
+
+The exemption is what lets the model represent the plastic fold-line behavior of real paper without needing a full plasticity simulation. The width is small (~1 mm) and the assertion machinery explicitly ignores fiducial pairs that straddle it.
+
+## Continuity with settle (FR-P4, verbatim)
+
+> All time-varying state defined in the [settle physics PRD](/pageturn-demo/design/settle-physics/) (`φ`, `b`, puff, tangent drift) shall act on the developable-surface manifold. The settle integrator shall not introduce membrane strain.
+
+In other words: the aerodynamic puff term `b̈ = ω²·(b₀ − b) − Db·ḃ + κ·φ̇²` excites curl, but the curl it excites is reinterpreted as an evolution of the cylindrical curvature `1/R`, not as an arbitrary per-vertex displacement field. The puff lives on the developable manifold.
+
+## Implementation flag plan
+
+The change is large enough that a feature flag is recommended (e.g. `?surface=developable`), with the existing `sin2phi` shader path retained until the developable path passes the FR-P1 invariant on every baseline scenario. The mutation report will likely need a re-baseline once `Book.ts` regains shader-math coverage; see the [mutation policy](/pageturn-demo/testing/mutation-policy/).
+
+## Cross-references
+
+- [Page model PRD](/pageturn-demo/design/page-model/) — the full developable-surface specification (FR-P1 through FR-P5, math sketch, open questions).
+- [Settle physics PRD](/pageturn-demo/design/settle-physics/) — the time-varying integrator that has to stay on the developable manifold.
+- [Tilted-crease model](/pageturn-demo/architecture/tilted-crease-model/) — the rigid-rotation half of the decomposition, already implemented.
+- [Harness scenarios](/pageturn-demo/testing/harness-scenarios/) — where the FR-P1 measurement lands.

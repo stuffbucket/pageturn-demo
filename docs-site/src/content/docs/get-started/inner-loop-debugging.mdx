@@ -1,0 +1,108 @@
+---
+title: Inner-loop debugging
+description: How an agent (or human) should debug the page-turn prototype efficiently — capture the state, don't paraphrase it.
+---
+
+How an agent (or human) should debug the page-turn prototype efficiently. The prototype ships four independent feedback streams that, together, remove almost all need to ask the user "what did you see?" — the information is already on disk.
+
+:::tip[The core idea]
+Capture the state, don't paraphrase it. A screenshot, a JSONL line, and a sidecar JSON are all cheaper than a round-trip to the user.
+:::
+
+## The four feedback streams
+
+| Stream | Where it lives | Enable with | What it gives you |
+|---|---|---|---|
+| **Telemetry** | `/tmp/pageturn-telemetry.jsonl` (one JSON event per line) | `?telemetry=1` | Real-time event log: pointer events, turn start/complete/cancel, settle entry/exit, capture triggers. Streamed by the Vite dev plugin (see `vite.config.ts` ~line 18, 174). |
+| **Debug HUD** | Top-left overlay in the running app | `?debug=1` | Live snapshot of the active state machine: spread index, dihedral, originY, settle phase, fan count. Visible in any screenshot. |
+| **Long-press capture** | `contrib/screenshots/<session>-<n>.png` + `.json` sidecar | `?capture=1[&session=<name>]` | Press-and-hold the canvas to snapshot a single moment. The sidecar JSON contains the full state object plus the short git SHA at capture time. |
+| **Trajectory dataset** | `harness/baselines/<model>/` (e.g. `sin2phi/`) | `cd harness && npm run capture -- <scenario>` | Headless Playwright + CCapture.js run that records fiducial positions over time for a fixed scripted scenario. Used for model-vs-model regression. |
+
+See the [URL flag matrix](/pageturn-demo/reference/url-flag-matrix/) for every available query parameter.
+
+## When to reach for each
+
+### Telemetry (`?telemetry=1`)
+
+- **Did event X actually fire?** — "the pointer-up handler is supposed to start a settle but the page just stops; is `settle_start` in the log?"
+- **Multi-step interaction correlation** — "the second fan turn after a cancel has wrong direction; let me diff the events."
+- **Timing** — the log timestamps each event in ms since page load.
+- **Cheap**: `tail -f /tmp/pageturn-telemetry.jsonl | jq -c` gives a real-time view.
+
+### Debug HUD (`?debug=1`)
+
+- **What was the value at the moment the screenshot was taken?** The HUD is *in* the screenshot.
+- **Sanity-check during dev** — glance to confirm the state machine is in the phase you expect.
+- The HUD is text rendered into the DOM, not the WebGL canvas, so it survives any rendering pathology (a black canvas still has a readable HUD).
+
+### Long-press capture (`?capture=1`)
+
+- **Rewind to this exact state** — the sidecar JSON has every uniform and state-machine field, plus the short git SHA.
+- **A specific moment that the user can identify** — "right when the page flips past vertical" is a long-press away.
+- The capture path uses `preserveDrawingBuffer` (PR #17) and registers in the capture phase before `main.ts`'s pointer handlers (PR #16).
+
+### Trajectory dataset (`harness/baselines/sin2phi/`)
+
+- **Comparing models** — does the new shader produce the same fiducial trajectory as the `sin2phi` baseline for `slow-diagonal-drag`?
+- **Regression catch** — a model change that should be visually invisible should produce a near-identical trajectory.
+- **Heavy** (Docker / Playwright) — only reach for this when comparing shader outputs across commits.
+
+## Concrete recipe: investigating a UX bug
+
+You have a vague report ("the page tears at the corner mid-flick"). Resist the urge to ask the user for more detail. Instead:
+
+### 1. Start the dev server with every stream on
+
+```bash
+npm run dev
+# then open in a browser:
+# http://localhost:5173/?debug=1&fiducials=1&telemetry=1&capture=1&session=corner-tear
+```
+
+### 2. Stream telemetry in a Monitor
+
+```bash
+tail -f /tmp/pageturn-telemetry.jsonl | jq -c
+```
+
+Run this with the Monitor tool (or `run_in_background`) so you get notified on every new event line.
+
+### 3. Reproduce the bug; long-press at key states
+
+Either reproduce yourself (most bugs in this prototype are deterministic and reproducible from the URL params) or, if it's a true input-pattern bug, ask the user *only* "please reproduce and long-press the canvas at the moment it looks wrong, and once just before". Two captures, no narration required.
+
+### 4. Read the captured artefacts
+
+```bash
+ls -la contrib/screenshots/corner-tear-*
+```
+
+For each capture:
+
+- View the PNG — the fiducial grid + HUD tell you *what the shader was doing geometrically*.
+- Read the `.json` sidecar — exact `dihedral`, `originY`, `dragProgress`, settle target, git SHA at capture time. Correlate sidecar timestamps with the telemetry log.
+
+### 5. Form a hypothesis, lock it in with a test
+
+- A unit test in `src/**/*.test.ts` if the bug is in the state machine.
+- A harness scenario in `harness/scenarios/` if the bug is visible only through rendering.
+
+Make the test fail first, fix the underlying code, watch the test pass.
+
+## What NOT to do
+
+:::caution[Anti-patterns]
+- **Don't ask the user for state values.** "What was the dihedral?" — read the sidecar JSON.
+- **Don't ask the user to describe what they see.** Ask them to long-press and send the PNG.
+- **Don't ask which build they're on.** The sidecar JSON has the short git SHA.
+- **Don't run the full Docker harness for a one-off bug.** Use the dev server + telemetry + long-press first.
+- **Don't paraphrase the telemetry stream.** Copy actual event lines so the user can grep.
+- **Don't disable a stream because it's noisy.** The streams are cheap and independent.
+:::
+
+## Cross-references
+
+- [Page model PRD](/pageturn-demo/design/page-model/) — developable-surface page model. Inextensibility violations are easiest to see with `?fiducials=1`.
+- [Settle physics PRD](/pageturn-demo/design/settle-physics/) — when debugging settle behavior, the trajectory dataset is your friend.
+- [Test suite audit](/pageturn-demo/testing/test-suite-audit/) — which Vitest suites are trustworthy and which (popup-spread) are pre-existing failing.
+- [Long-press capture pipeline](/pageturn-demo/architecture/long-press-capture-pipeline/) — the foundations the long-press stream relies on.

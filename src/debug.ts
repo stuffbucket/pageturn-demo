@@ -127,11 +127,11 @@ export class DebugHud {
     } as Partial<CSSStyleDeclaration>);
 
     const qrCanvas = document.createElement('canvas');
-    qrCanvas.width = 80;
-    qrCanvas.height = 80;
+    qrCanvas.width = 160;
+    qrCanvas.height = 160;
     Object.assign(qrCanvas.style, {
-      width: '80px',
-      height: '80px',
+      width: '160px',
+      height: '160px',
       cursor: 'pointer',
       borderRadius: '3px',
       background: '#fff',
@@ -180,7 +180,7 @@ export class DebugHud {
     // Render Build section + QR up front (fire-and-forget).  These don't
     // change during a session.
     this.renderBuildSection();
-    void QRCode.toCanvas(qrCanvas, this.qrPayload, { width: 80, margin: 1 })
+    void QRCode.toCanvas(qrCanvas, this.qrPayload, { width: 160, margin: 1 })
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.warn('[debug-hud] QR render failed', err);

@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { BookState, DEFAULT_BOOK_MATERIAL, maxFanCount } from './BookState';
 import type { BookMaterial } from './BookState';
-import { creaseDirection, type Crease, type Vec2 } from './CreaseGeometry';
+import { creaseFromDrag, type Crease, type Vec2 } from './CreaseGeometry';
 import { generateBookTextures, TexturePool } from '../textures/atlas';
 
 export interface BookParams {
@@ -344,19 +344,9 @@ export class Book {
    * normalisation.  Called every frame for the turning page(s).
    */
   private applyCreaseUniforms(mat: THREE.ShaderMaterial, crease: Crease): void {
-    const corner: Vec2 = { x: this.pageWidth, y: this.pageHeight / 2 };
-    const drag = crease.farPoint;
-
-    const creaseDir = creaseDirection(corner, drag);
-
-    // cornerDir = unit (corner − originOnEdge), perpendicular to creaseDir.
-    let cdx = corner.x - crease.originOnEdge.x;
-    let cdy = corner.y - crease.originOnEdge.y;
-    const cdLen = Math.hypot(cdx, cdy);
-    if (cdLen < 1e-9) { cdx = 1; cdy = 0; } else { cdx /= cdLen; cdy /= cdLen; }
-
     // Max projection of any of the four page corners onto cornerDir, measured
-    // from the crease origin.  Bounds the flap region for bend normalisation.
+    // from the (spine-pinned) crease origin.  Bounds the flap region for the
+    // shader's per-vertex bend normalisation.
     const W = this.pageWidth;
     const H = this.pageHeight;
     const pageCorners: Vec2[] = [
@@ -364,16 +354,17 @@ export class Book {
       { x: W, y: -H / 2 }, { x: W, y: H / 2 },
     ];
     let maxFlap = 0;
+    const cd = crease.cornerDir;
     for (const pc of pageCorners) {
-      const s = (pc.x - crease.originOnEdge.x) * cdx + (pc.y - crease.originOnEdge.y) * cdy;
+      const s = (pc.x - crease.originOnEdge.x) * cd.x + (pc.y - crease.originOnEdge.y) * cd.y;
       if (s > maxFlap) maxFlap = s;
     }
     if (maxFlap < 1e-6) maxFlap = 1e-6;
 
     const u = mat.uniforms;
     (u.uCreaseOrigin.value as THREE.Vector2).set(crease.originOnEdge.x, crease.originOnEdge.y);
-    (u.uCreaseDir.value as THREE.Vector2).set(creaseDir.x, creaseDir.y);
-    (u.uCornerDir.value as THREE.Vector2).set(cdx, cdy);
+    (u.uCreaseDir.value as THREE.Vector2).set(crease.creaseDir.x, crease.creaseDir.y);
+    (u.uCornerDir.value as THREE.Vector2).set(cd.x, cd.y);
     u.uMaxFlapDist.value = maxFlap;
     u.uDihedral.value = crease.dihedral;
   }
@@ -669,16 +660,17 @@ export class Book {
     for (const page of this.fanPages) {
       const p = Math.max(0, Math.min(1, (progress - page.delay) / (1 - page.delay)));
       const phi = this.fanReverse ? Math.PI * (1 - p) : Math.PI * p;
-      // Synthesise a horizontal drag (vertical crease) at distance 2W·(phi/π)
-      // so the crease reaches the spine at progress = 1.
-      const dragX = corner.x - 2 * W * (phi / Math.PI);
-      const synthCrease = {
-        alpha: -Math.PI / 2,
-        originOnEdge: { x: (corner.x + dragX) / 2, y: corner.y },
-        farPoint: { x: dragX, y: corner.y },
-        dihedral: Math.PI * Math.min(1, Math.abs((corner.x - dragX) / W)),
-        progress: Math.abs(phi / Math.PI),
-      };
+      // Synthesise a spine-pinned vertical-crease drag at the same horizontal
+      // pull (forward span = W, reverse span = 2W) so the crease reaches the
+      // spine at p = 1 and the dihedral monotonically tracks phi.
+      const span = this.fanReverse ? 2 * W : W;
+      const dragX = corner.x - span * (phi / Math.PI);
+      const synthCrease = creaseFromDrag(
+        corner,
+        { x: dragX, y: corner.y },
+        { x: W, y: H },
+        this.fanReverse,
+      );
       this.applyCreaseUniforms(page.mesh.material as THREE.ShaderMaterial, synthCrease);
     }
 

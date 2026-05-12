@@ -238,9 +238,6 @@ export function installLongPressCapture(
   canvas.addEventListener('pointermove', (e: PointerEvent) => {
     if (!pressActive) return;
     if (e.pointerId !== activePointerId) return;
-    // Once a capture has fired for this press, do not re-arm — a single
-    // press should produce at most one screenshot.
-    if (captureFiredThisPress) return;
     const dx = e.clientX - startClientX;
     const dy = e.clientY - startClientY;
     if (dx * dx + dy * dy > MOVE_TOLERANCE_PX * MOVE_TOLERANCE_PX) {
@@ -249,7 +246,14 @@ export function installLongPressCapture(
       // resets."  This enables capturing mid-drag pauses: drag the page
       // to a tricky animation state, then hold still for 5s and the
       // screen flashes.
+      //
+      // Meaningful motion also RE-ARMS the capture cycle after a fire,
+      // so a single uninterrupted press can produce multiple captures
+      // by hold-move-hold-move...  Holding completely still after a
+      // capture won't double-fire because the timer only restarts on
+      // motion past tolerance.
       cancelTimer();
+      captureFiredThisPress = false;
       startClientX = e.clientX;
       startClientY = e.clientY;
       const rect = canvas.getBoundingClientRect();

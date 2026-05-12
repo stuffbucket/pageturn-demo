@@ -901,6 +901,13 @@ const BIG_BUCK_BUNNY_URL =
   'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4';
 
 function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THREE.Texture } {
+  // Harness mode: skip the video element and render a static placeholder.
+  // The harness page sets <body data-harness="1"> before main.ts boots, so
+  // the demo doesn't depend on a remote CDN during automated capture.
+  if (typeof document !== 'undefined' && document.body?.dataset.harness === '1') {
+    return createVideoPlaceholderTextures(s);
+  }
+
   const video = document.createElement('video');
   video.crossOrigin = 'anonymous';
   video.src = BIG_BUCK_BUNNY_URL;
@@ -956,6 +963,31 @@ function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THR
   requestAnimationFrame(update);
 
   return { left: leftTex, right: rightTex };
+}
+
+function createVideoPlaceholderTextures(s: number): { left: THREE.Texture; right: THREE.Texture } {
+  const draw = (label: 'L' | 'R') => {
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const x = c.getContext('2d')!;
+    const g = x.createLinearGradient(0, 0, s, s);
+    g.addColorStop(0, '#1a2233');
+    g.addColorStop(1, '#3a4a66');
+    x.fillStyle = g; x.fillRect(0, 0, s, s);
+    x.fillStyle = '#c0d0e8';
+    x.font = `bold ${s * 0.08}px Georgia, serif`;
+    x.textAlign = 'center';
+    x.fillText('HARNESS', s / 2, s * 0.45);
+    x.font = `${s * 0.04}px Georgia, serif`;
+    x.fillText('video disabled', s / 2, s * 0.55);
+    x.font = `${s * 0.14}px Georgia, serif`;
+    x.fillText(label, s / 2, s * 0.85);
+    const t = toTexture(c);
+    t.generateMipmaps = false;
+    t.minFilter = THREE.LinearFilter;
+    return t;
+  };
+  return { left: draw('L'), right: draw('R') };
 }
 
 // ── Texture Pool ─────────────────────────────────────────────────────────────

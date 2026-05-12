@@ -2,9 +2,13 @@ node_modules
 harness/node_modules
 harness/output
 .git
+.github
 .vscode
 .idea
 dist
 dist-ssr
 public/videos
+docs
 *.log
+.DS_Store
+coverage

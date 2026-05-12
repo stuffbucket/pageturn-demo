@@ -8,11 +8,14 @@ WORKDIR /work
 
 # ── Layer 1: harness deps (changes rarely) ───────────────────────────────────
 COPY harness/package.json ./harness/
-RUN cd harness && npm install --no-audit --no-fund --omit=optional
+RUN cd harness && npm install --no-audit --no-fund
 
 # ── Layer 2: app deps (changes when package.json changes) ────────────────────
+# IMPORTANT: do not pass --omit=optional here. Rollup (used by Vite) ships
+# its native binaries as optionalDependencies — excluding them breaks
+# `vite` startup with MODULE_NOT_FOUND on @rollup/rollup-linux-x64-gnu.
 COPY package.json ./
-RUN npm install --no-audit --no-fund --omit=optional
+RUN npm install --no-audit --no-fund
 
 # ── Layer 3: source (changes on every commit) ────────────────────────────────
 COPY . .

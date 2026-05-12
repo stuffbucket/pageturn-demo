@@ -48,17 +48,24 @@ async function main(): Promise<void> {
       const ctx = await browser.newContext({ viewport: scenario.viewport });
       const page = await ctx.newPage();
       page.on('console', (msg) => {
-        if (msg.type() === 'error') console.error(`  [page error] ${msg.text()}`);
+        const t = msg.type();
+        const prefix = t === 'error' ? '✗' : t === 'warning' ? '!' : '·';
+        console.log(`  ${prefix} [page:${t}] ${msg.text()}`);
       });
-      page.on('pageerror', (err) => console.error(`  [pageerror] ${err.message}`));
+      page.on('pageerror', (err) => console.error(`  ✗ [pageerror] ${err.message}`));
 
-      await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+      await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
       await page.evaluate(() => window.__harness!.ready);
 
-      const result = await page.evaluate(
-        async (s) => window.__harness!.runScenario(s),
-        scenario
-      );
+      // Hard wall-clock ceiling per scenario — the in-page watchdog gives us
+      // a nicer error, but if even *that* hangs we still want the runner to die.
+      const wallTimeoutMs = Math.max(60_000, scenario.duration * 30);
+      const result = await Promise.race([
+        page.evaluate(async (s) => window.__harness!.runScenario(s), scenario),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`runner timeout: ${scenario.name} > ${wallTimeoutMs}ms`)), wallTimeoutMs),
+        ),
+      ]);
 
       const outPath = join(OUTPUT_DIR, `${scenario.name}.webm`);
       await writeFile(outPath, Buffer.from(result.base64, 'base64'));

@@ -9,8 +9,8 @@
     "run:all": "tsx runner/run.ts --all"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
-    "playwright": "^1.49.0",
+    "@playwright/test": "1.49.0",
+    "playwright": "1.49.0",
     "tsx": "^4.19.2",
     "typescript": "~5.9.3"
   }

@@ -1,14 +1,26 @@
 // Page-side bootstrap for the test harness.
 // Loads the demo app, then attaches window.__harness so an external driver
 // (Playwright) can run scenarios and pull back a captured video blob.
+//
+// Capture strategy: MediaRecorder on canvas.captureStream(). This records the
+// canvas's GPU surface in real time without per-frame ReadPixels, so software
+// WebGL (which is what headless Chromium uses without GPU passthrough) doesn't
+// tank performance. Tradeoff: events are dispatched in wall-clock time rather
+// than virtual time. For frame-perfect deterministic capture, swap in CCapture
+// later — the API surface here doesn't need to change.
 
 import '../../src/main.ts';
 import type { Scenario, RunOptions, HarnessAPI, PointerEventStep } from './ccapture';
 
 const READY_DELAY_FRAMES = 4;
+const RUNAWAY_MULTIPLIER = 20; // duration * this = abort deadline
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function waitForReady(): Promise<void> {
@@ -45,7 +57,6 @@ function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // strip "data:<mime>;base64," prefix
       const comma = result.indexOf(',');
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
@@ -54,54 +65,88 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function runScenario(
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`harness timeout: ${label} after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+function pickMimeType(): string {
+  const candidates = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for (const m of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(m)) return m;
+  }
+  return 'video/webm';
+}
+
+async function runScenarioInner(
   scenario: Scenario,
-  opts: RunOptions = {}
+  opts: RunOptions,
 ): Promise<{ base64: string; mimeType: string }> {
-  const fps = opts.fps ?? scenario.fps ?? 60;
-  const quality = opts.quality ?? 90;
+  const fps = opts.fps ?? scenario.fps ?? 30;
   const canvas = getCanvas();
 
-  const capturer = new window.CCapture({
-    format: opts.format ?? 'webm',
-    framerate: fps,
-    quality,
-    verbose: false,
-    display: false,
-    name: scenario.name,
-  });
+  console.log(`[harness] starting "${scenario.name}" fps=${fps} duration=${scenario.duration}ms`);
 
-  // Sort events by time so the cursor through them is monotonic.
-  const events = [...scenario.events].sort((a, b) => a.t - b.t);
-  let nextEventIdx = 0;
-  const totalMs = scenario.duration;
-  const frameMs = 1000 / fps;
-  const totalFrames = Math.ceil(totalMs / frameMs);
-
-  capturer.start();
-
-  // We drive simulation time deterministically: each frame advances by frameMs,
-  // and any events whose timestamp has passed get dispatched before the capture
-  // grabs that frame. This decouples scenario timing from wall clock.
-  for (let f = 0; f < totalFrames; f++) {
-    const virtualNow = f * frameMs;
-    while (nextEventIdx < events.length && events[nextEventIdx].t <= virtualNow) {
-      dispatchPointer(canvas, events[nextEventIdx]);
-      nextEventIdx++;
-    }
-    // Let the app render this frame. We rely on the existing rAF loop set up
-    // by main.ts to redraw; one rAF tick is enough for synchronous changes.
-    await nextFrame();
-    capturer.capture(canvas);
+  if (typeof MediaRecorder === 'undefined') {
+    throw new Error('MediaRecorder is not available in this browser');
+  }
+  if (typeof (canvas as unknown as { captureStream?: () => MediaStream }).captureStream !== 'function') {
+    throw new Error('canvas.captureStream() is not available');
   }
 
-  capturer.stop();
+  const stream = (canvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream })
+    .captureStream(fps);
+  const mimeType = pickMimeType();
+  const chunks: Blob[] = [];
+  const recorder = new MediaRecorder(stream, { mimeType });
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
 
-  const blob: Blob = await new Promise((resolve) => {
-    capturer.save((b: Blob) => resolve(b));
-  });
+  const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+  recorder.start();
+
+  const events = [...scenario.events].sort((a, b) => a.t - b.t);
+  const t0 = performance.now();
+  let i = 0;
+  while (i < events.length) {
+    const ev = events[i];
+    const elapsed = performance.now() - t0;
+    const wait = ev.t - elapsed;
+    if (wait > 0) await sleep(wait);
+    dispatchPointer(canvas, ev);
+    i++;
+  }
+  const remaining = scenario.duration - (performance.now() - t0);
+  if (remaining > 0) await sleep(remaining);
+
+  // Request a final dataavailable chunk before stopping so we don't lose
+  // the tail of the recording on some MediaRecorder implementations.
+  recorder.requestData();
+  recorder.stop();
+  await withTimeout(stopped, 5_000, 'MediaRecorder.stop');
+
+  const blob = new Blob(chunks, { type: mimeType });
+  console.log(`[harness] recorded ${chunks.length} chunks, ${blob.size} bytes`);
+  if (blob.size === 0) throw new Error('harness: MediaRecorder produced an empty blob');
+
   const base64 = await blobToBase64(blob);
-  return { base64, mimeType: blob.type || 'video/webm' };
+  return { base64, mimeType };
+}
+
+async function runScenario(
+  scenario: Scenario,
+  opts: RunOptions = {},
+): Promise<{ base64: string; mimeType: string }> {
+  const deadline = scenario.duration * RUNAWAY_MULTIPLIER;
+  return withTimeout(runScenarioInner(scenario, opts), deadline, `runScenario(${scenario.name})`);
 }
 
 const api: HarnessAPI = {

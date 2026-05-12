@@ -1,28 +1,12 @@
-// Minimal ambient types for CCapture.js loaded as a global via <script> tag.
-// See: https://github.com/spite/ccapture.js
+// Shared types for the harness (page-side and runner-side).
+//
+// File is named ccapture.d.ts for historical reasons — initial implementation
+// used CCapture.js for frame-perfect capture. The current implementation uses
+// MediaRecorder on canvas.captureStream(), which is faster on software WebGL
+// (headless Chromium without GPU passthrough). CCapture is kept in mind as a
+// future toggle for deterministic per-frame capture.
 declare global {
-  interface CCaptureOptions {
-    format?: 'webm' | 'gif' | 'png' | 'jpg' | 'ffmpegserver' | 'webm-mediarecorder';
-    framerate?: number;
-    quality?: number;
-    name?: string;
-    motionBlurFrames?: number;
-    verbose?: boolean;
-    display?: boolean;
-    timeLimit?: number;
-    autoSaveTime?: number;
-  }
-
-  class CCapture {
-    constructor(options: CCaptureOptions);
-    start(): void;
-    capture(canvas: HTMLCanvasElement): void;
-    stop(): void;
-    save(callback?: (blob: Blob) => void): void;
-  }
-
   interface Window {
-    CCapture: typeof CCapture;
     __harness?: HarnessAPI;
   }
 }

@@ -215,10 +215,19 @@ export class BookState {
   }
 
   /**
-   * Get the turning progress as [0, 1]
+   * Get the turning progress as [0, 1] where 0 = just-started and 1 = committed,
+   * regardless of direction.
+   *
+   * For reverse turns, phi runs π → 0 (set in startReverseTurn, and matched by
+   * `setTurningProgress`'s `phi = π·(1 − progress)` mapping for reverse), so
+   * progress must be inverted to keep the same start=0 / commit=1 convention as
+   * forward turns.  Without this inversion, reverse-turn drag at rest reads as
+   * `progress = 1` (already committed), so the >= 0.5 threshold in main.ts's
+   * pointerup logic interprets a meaningful drag as "go back to 1" (cancel) and
+   * the page snaps back to the original spread.
    */
   getTurningProgress(): number {
-    return this.phi / Math.PI;
+    return this.isReverseTurn ? 1 - this.phi / Math.PI : this.phi / Math.PI;
   }
 
   /**

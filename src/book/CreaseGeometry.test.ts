@@ -37,6 +37,36 @@ describe('creaseFromDrag — spine pinning (bound-book invariant)', () => {
     // alpha is the standard "vertical crease" angle, -π/2.
     expect(wrapAngle(c.alpha + Math.PI / 2)).toBeCloseTo(0, 12);
   });
+
+  it('clamps originOnEdge to the page bounds (top edge) when the unclamped intersection lies above the page', () => {
+    // Drag with very small dy (nearly horizontal) such that the perpendicular
+    // intersection with x=0 is far above the page.  Without clamping, the
+    // rotation axis is far off-page and the page detaches from the spine.
+    const drag: Vec2 = { x: -0.4, y: 0.55 };
+    const c = creaseFromDrag(CORNER, drag, PAGE);
+    expect(c.originOnEdge.x).toBe(0);
+    expect(c.originOnEdge.y).toBeLessThanOrEqual(PAGE.y / 2 + 1e-12);
+    expect(c.originOnEdge.y).toBeGreaterThanOrEqual(-PAGE.y / 2 - 1e-12);
+  });
+
+  it('clamps originOnEdge to the bottom edge when intersection lies below the page', () => {
+    // Mirror of the above test: drag downward so the intersection lies below.
+    const drag: Vec2 = { x: -0.4, y: 0.85 };
+    const c = creaseFromDrag(CORNER, drag, PAGE);
+    expect(c.originOnEdge.x).toBe(0);
+    expect(c.originOnEdge.y).toBeLessThanOrEqual(PAGE.y / 2 + 1e-12);
+    expect(c.originOnEdge.y).toBeGreaterThanOrEqual(-PAGE.y / 2 - 1e-12);
+  });
+
+  it('treats near-horizontal drag (within ~1°) as exact horizontal — degenerate to spine-aligned crease', () => {
+    // dy is tiny relative to dx but nonzero. Without the epsilon-widening,
+    // perpY/perpX would still be huge and originY would land far off-page.
+    const drag: Vec2 = { x: 0.3, y: CORNER.y + 0.0001 };
+    const c = creaseFromDrag(CORNER, drag, PAGE);
+    expect(c.originOnEdge.x).toBe(0);
+    expect(Math.abs(c.creaseDir.x)).toBeLessThan(0.01);
+    expect(c.creaseDir.y).toBeGreaterThan(0.99);
+  });
 });
 
 describe('creaseFromDrag — alpha tilt direction', () => {
@@ -58,10 +88,11 @@ describe('creaseFromDrag — alpha tilt direction', () => {
 });
 
 describe('creaseFromDrag — geometric properties', () => {
-  it('the crease line passes through both originOnEdge and the perpendicular-through-midpoint', () => {
-    const drag: Vec2 = { x: -0.4, y: 0.55 };
+  it('the crease line passes through both originOnEdge and the perpendicular-through-midpoint (when origin is in-page)', () => {
+    // Drag chosen so the unclamped spine intersection lies inside [-H/2, H/2]
+    // — the clamp doesn't fire and strict turn.js geometry holds.
+    const drag: Vec2 = { x: 0.0, y: -0.5 };
     const c = creaseFromDrag(CORNER, drag, PAGE);
-    // origin is on x=0 by construction; verify it's collinear with M.
     const M: Vec2 = { x: (CORNER.x + drag.x) / 2, y: (CORNER.y + drag.y) / 2 };
     const vx = M.x - c.originOnEdge.x;
     const vy = M.y - c.originOnEdge.y;

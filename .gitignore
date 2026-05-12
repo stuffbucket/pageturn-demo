@@ -28,3 +28,4 @@ public/videos/
 
 # Harness capture outputs
 harness/output/
+.claude/worktrees/

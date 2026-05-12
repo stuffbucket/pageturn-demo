@@ -381,6 +381,27 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       book.setTurningProgress(1.0);
       expect(book.getRotationAngle()).toBeCloseTo(0, 5);
     });
+
+    it('getTurningProgress() reports 0 = just-started, 1 = committed in BOTH directions', () => {
+      // Forward turn: phi rises 0 → π, progress should rise 0 → 1.
+      book.startTurn();
+      expect(book.getTurningProgress()).toBeCloseTo(0, 9);
+      book.setTurningProgress(0.5);
+      expect(book.getTurningProgress()).toBeCloseTo(0.5, 9);
+      book.setTurningProgress(1.0);
+      expect(book.getTurningProgress()).toBeCloseTo(1.0, 9);
+      book.completeTurn();
+
+      // Reverse turn: phi falls π → 0, progress should still rise 0 → 1
+      // (otherwise the >= 0.5 settle threshold in main.ts treats a meaningful
+      // drag as "go back to original" — the page snaps back on release).
+      book.startReverseTurn();
+      expect(book.getTurningProgress()).toBeCloseTo(0, 9); // phi=π → progress=0
+      book.setTurningProgress(0.5);
+      expect(book.getTurningProgress()).toBeCloseTo(0.5, 9);
+      book.setTurningProgress(1.0);
+      expect(book.getTurningProgress()).toBeCloseTo(1.0, 9); // phi=0 → progress=1
+    });
   });
 
   describe('Invariant 7: Turning Status', () => {

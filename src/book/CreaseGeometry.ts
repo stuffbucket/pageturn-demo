@@ -109,13 +109,15 @@ export function creaseFromDrag(
   isReverse = false,
 ): Crease {
   const W = pageSize.x;
+  const H = pageSize.y;
 
   const dx = drag.x - corner.x;
   const dy = drag.y - corner.y;
 
   // Dihedral driven by horizontal pull toward the spine.  Pure vertical drag
   // contributes nothing.  Forward saturates at π over one pageWidth (snappy);
-  // reverse uses 2·pageWidth so the full [-W, +W] sweep maps across [π, 0].
+  // reverse uses 2·pageWidth so the full [-W, +W] sweep maps across [π, 0]
+  // (reverse rest = drag at (-W, H/2) → pull = 2W → dihedral = π).
   const horizontalPull = corner.x - drag.x;
   const span = isReverse ? 2 * W : W;
   const dihedral = Math.PI * Math.max(0, Math.min(1, horizontalPull / span));
@@ -132,9 +134,16 @@ export function creaseFromDrag(
   let creaseDirX: number;
   let creaseDirY: number;
 
-  if (Math.abs(perpX) < 1e-9) {
-    // Drag direction has no y-component → crease is parallel to the spine.
-    // Degenerate to crease ≡ spine itself: standard book turn.
+  // Threshold below which we treat the crease as parallel to the spine.
+  // Bumped from 1e-9 to a fraction of pageHeight: when perpX is tiny but
+  // nonzero, perpY/perpX explodes and originY lands far off the page,
+  // producing a rotation axis that's not on the spine and tearing the
+  // page off its binding. For drag directions within ~1° of horizontal,
+  // collapsing to the standard book turn is visually correct.
+  const HORIZONTAL_DRAG_EPSILON = 0.02 * H;
+  if (Math.abs(perpX) < HORIZONTAL_DRAG_EPSILON) {
+    // Drag direction has (essentially) no y-component → crease is parallel
+    // to the spine. Degenerate to crease ≡ spine itself: standard book turn.
     originY = corner.y;
     creaseDirX = 0;
     creaseDirY = 1;
@@ -144,7 +153,15 @@ export function creaseFromDrag(
     //   spineY = M.y − M.x · perp.y / perp.x
     const Mx = (corner.x + drag.x) / 2;
     const My = (corner.y + drag.y) / 2;
-    originY = My - Mx * perpY / perpX;
+    const rawSpineY = My - Mx * perpY / perpX;
+    // Clamp the spine intersection to the page bounds. If the geometric
+    // intersection lies far off-page (e.g. shallow tilt with large drag),
+    // an unclamped axis at (0, ±100) produces a rotation that whips the
+    // whole page off the spine. Clamping keeps the rotation axis on the
+    // page edge so the binding constraint is preserved; the visual is
+    // close to "crease tilted as far as it can while still touching the
+    // spine within the page".
+    originY = Math.max(-H / 2, Math.min(H / 2, rawSpineY));
 
     const len = Math.hypot(perpX, perpY);
     creaseDirX = perpX / len;

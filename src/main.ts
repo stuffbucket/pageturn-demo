@@ -6,8 +6,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css'
 import { Book } from './book/Book';
-import { getVimeoVideo } from './textures/atlas';
-import { emit as emitTelemetry, installErrorReporting } from './telemetry';
+import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
+import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
+import { DebugHud, debugEnabled } from "./debug";
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -90,6 +91,10 @@ class PageTurnDemo {
   private cameraReturnStart = new THREE.Vector3();
   private cameraReturnTargetStart = new THREE.Vector3();
   private cameraReturnProgress = 0;
+
+  // ── Debug HUD ──────────────────────────────────────────────────────────────
+  private debugHud: DebugHud | null = null;
+  private debugScratchTarget = new THREE.Vector3();
 
   constructor() {
     // Telemetry boot hook — installs error listeners and emits a boot event
@@ -179,6 +184,7 @@ class PageTurnDemo {
     canvas.appendChild(this.videoCreditEl);
 
     this.setupEventHandlers();
+    this.setupDebugUI();
     this.prevTimestamp = performance.now();
     this.animate();
     window.addEventListener('resize', () => this.onWindowResize());
@@ -238,6 +244,37 @@ class PageTurnDemo {
     el.addEventListener('pointerup',   (e) => this.onPointerUp(e));
     el.addEventListener('pointercancel', () => this.onPointerCancel());
     el.addEventListener('lostpointercapture', () => this.onLostCapture());
+  }
+
+  // ── Debug HUD + help-menu toggles ─────────────────────────────────────────
+  private setupDebugUI(): void {
+    const initialDebug = debugEnabled();
+    this.debugHud = new DebugHud(this.book, initialDebug);
+
+    const hudCheckbox = document.getElementById('toggle-debug-hud') as HTMLInputElement | null;
+    const fidCheckbox = document.getElementById('toggle-fiducials') as HTMLInputElement | null;
+    if (hudCheckbox) {
+      hudCheckbox.checked = initialDebug;
+      hudCheckbox.addEventListener('change', () => {
+        this.debugHud?.setVisible(hudCheckbox.checked);
+      });
+    }
+    if (fidCheckbox) {
+      fidCheckbox.checked = fiducialsEnabled();
+      fidCheckbox.addEventListener('change', () => {
+        // Fiducials are baked into page textures at generateBookTextures()
+        // time, so toggling at runtime requires regenerating ~24 canvas
+        // textures or maintaining a parallel overlay-mesh hierarchy. To keep
+        // this PR scoped (no edits to atlas.ts or Book.ts texture plumbing),
+        // we update the URL flag and reload — the user gets a clean restart
+        // with the new fiducials setting in <300 ms on dev server.
+        const params = new URLSearchParams(location.search);
+        if (fidCheckbox.checked) params.set('fiducials', '1');
+        else params.delete('fiducials');
+        const qs = params.toString();
+        location.search = qs ? `?${qs}` : '';
+      });
+    }
   }
 
   private onPointerDown(e: PointerEvent): void {
@@ -571,6 +608,23 @@ class PageTurnDemo {
 
     this.book.update(dt);
     this.renderer.render(this.scene, this.camera);
+
+    // Debug HUD — update once per rAF, no-op when hidden.
+    if (this.debugHud && this.debugHud.isVisible()) {
+      const dp = this.book.getState().getDragPoint();
+      this.debugHud.update({
+        isDragging: this.dragging,
+        dragPointX: dp ? dp.x : null,
+        dragPointY: dp ? dp.y : null,
+        dragProgress: this.dragProgress,
+        dragVelocity: this.dragVelocity,
+        settling: this.settling,
+        settleTarget: this.settleTarget,
+        fps: this.fps,
+        camera: this.camera,
+        controlsTarget: this.debugScratchTarget.copy(this.controls.target),
+      });
+    }
   };
 
   // ── Vimeo video overlay ─────────────────────────────────────────────────────

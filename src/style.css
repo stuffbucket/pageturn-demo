@@ -131,6 +131,33 @@ button:disabled {
   margin: 5px 0;
 }
 
+#debug-controls {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.85em;
+}
+
+#debug-controls .dc-heading {
+  margin: 0 0 6px 0;
+  color: #ffd479;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 0.9em;
+}
+
+#debug-controls label {
+  display: block;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+#debug-controls .hint {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85em;
+  margin: 2px 0 0 0;
+}
+
 canvas {
   display: block;
   width: 100%;

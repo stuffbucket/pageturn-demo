@@ -149,3 +149,34 @@ implementation inside `runScenarioInner` — the public API doesn't change.
 - Only shared-code change: a one-branch `data-harness` check in `atlas.ts`
   that swaps the video texture for a static placeholder in harness mode.
 - The harness can be deleted or rebuilt without touching the demo.
+
+## Troubleshooting
+
+### Host `contrib/screenshots/` is empty after a harness run
+
+If the harness ran successfully (you saw a `file-exists-glob` assertion pass
+for `long-press-capture` or another scenario that emits a screenshot) but
+nothing appears on the host at `contrib/screenshots/`, the most likely
+cause is a **stale container image** that predates the volume mount added
+in PR #34. Compose only honors the `volumes:` block at container-create
+time, and the mount line was missing from older `docker-compose.yml`
+revisions baked into cached images.
+
+Rebuild the image, then re-run:
+
+```bash
+docker compose -p <project-name> -f harness/docker-compose.yml build
+docker compose -p <project-name> -f harness/docker-compose.yml up --abort-on-container-exit
+```
+
+To sanity-check the mount itself without re-running scenarios:
+
+```bash
+docker compose -p volume-diag -f harness/docker-compose.yml run --rm harness \
+  sh -c "touch /work/contrib/screenshots/mount-check.txt"
+ls contrib/screenshots/mount-check.txt   # should exist on host
+```
+
+If `mount-check.txt` does not appear on the host, the bind mount itself
+is misconfigured — check `docker compose -f harness/docker-compose.yml config`
+to see the resolved absolute source path Compose is using.

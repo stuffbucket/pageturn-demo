@@ -262,7 +262,10 @@ export class Book {
    * Elements start flat (rotation.x = 0); applyPopupFold() drives them
    * upright.  Trees and the sun use sub-groups so their elevated parts
    * pivot correctly around their base on the page.
+   *
+   * Reserved: invoked from line 191 once the popup feature ships. See issue #21.
    */
+  // @ts-expect-error TS6133: unused while popup feature is disabled (see issue #21)
   private createPopup(): void {
     this.popupGroup = new THREE.Group();
 

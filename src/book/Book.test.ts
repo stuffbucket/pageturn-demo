@@ -479,7 +479,10 @@ describe('Book - Cancel Fan Turn', () => {
 
 // ── Fan × Popup Integration ─────────────────────────────────────────────────
 
-describe('Book - Fan × Popup', () => {
+// Skipped because the popup feature is currently disabled — `// this.createPopup()`
+// in Book.ts:191 is commented out. These tests encode the popup contract for when
+// the feature ships. Re-enable when the disabled call site is restored. Tracks issue #20.
+describe.skip('Book - Fan × Popup', () => {
   const POPUP_SPREAD = 7;
 
   it('popup is hidden initially (book starts at j=-1)', () => {

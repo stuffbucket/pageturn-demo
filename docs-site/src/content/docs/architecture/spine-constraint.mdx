@@ -1,0 +1,45 @@
+---
+title: Spine constraint
+description: Why the spine column has to stay pinned to the binding, what happens when it doesn't, and how the inline GLSL classifier enforces it.
+---
+
+import { Image } from 'astro:assets';
+import spineTear26 from '../../../assets/screenshots/spine-tear-26.png';
+import spineTear27 from '../../../assets/screenshots/spine-tear-27.png';
+
+## The constraint
+
+The vertices on the spine edge of the lifted flap must move with the spine of the book — never with the lifted region. If the shader's flap classifier is off by one row of vertices, the spine column visibly *tears* away from the binding mid-drag.
+
+## What it looks like when broken
+
+This is the regression that triggered PR #10:
+
+<Image src={spineTear26} alt="Pre-fix screenshot showing the spine column separating from the binding mid-drag." />
+<Image src={spineTear27} alt="A second pre-fix capture — the spine vertices have rotated with the flap instead of staying pinned." />
+
+You can see the lifted flap is rotating correctly *but* it's dragging the spine column with it. The static spread mesh (which always shows the resting state) is doing its job, so what you're seeing is a per-vertex misclassification in the inline `FLIP_VERT` shader.
+
+## How the fix works
+
+In `src/book/Book.ts`, the shader runs a side-test: project the vertex onto the perpendicular of `creaseDir` through `originOnEdge`; if the signed distance is on the lifted side, rotate by `dihedral`, otherwise leave the vertex at rest.
+
+The bug was that vertices exactly on the spine column were being classified as lifted (the perpendicular projection was returning a tiny positive value due to floating-point noise). The fix forces those vertices to the static side regardless of the projection sign.
+
+:::caution[Mutation-coverage / unit-test gap]
+This bug shipped to `main` because the JS-side `ShaderMath.ts` reimplementation of the vertex math doesn't model the flap classifier at all — it computes per-vertex `φ` as if every vertex were on the lifted side. The 21 `ShaderMath.test.ts` tests would all stay green even if the GLSL classifier flipped its sign. See [Test suite audit &sect; false positives](/pageturn-demo/testing/test-suite-audit/).
+:::
+
+## How the harness catches it now
+
+The headless [trajectory dataset](/pageturn-demo/testing/harness-scenarios/) records fiducial-marker positions during a scripted `corner-peel` drag. A spine-column tear shows up as a fiducial whose position drifts away from the binding when it should stay pinned. The end-to-end pixel-level check that earned a slot in the top-5 missing tests is:
+
+> At peak dihedral on a corner-peel diagonal drag, the spine column still shows page color (not the gap behind the binding).
+
+That assertion is now a Playwright scenario in `harness/scenarios/`.
+
+## See also
+
+- [Tilted-crease model](/pageturn-demo/architecture/tilted-crease-model/) — the four uniforms the classifier consumes.
+- [Test suite audit](/pageturn-demo/testing/test-suite-audit/) — the seam-coverage taxonomy.
+- [Architecture overview](/pageturn-demo/architecture/overview/) — `FLIP_VERT` source location.

@@ -41,3 +41,8 @@ reports/
 
 # Per-developer state for scripts/test-mutation-if-changed.sh
 .stryker-last-run
+
+# Starlight docs site build artifacts
+docs-site/node_modules
+docs-site/dist
+docs-site/.astro

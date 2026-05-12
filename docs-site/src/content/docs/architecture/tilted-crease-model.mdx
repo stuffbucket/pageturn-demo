@@ -1,0 +1,69 @@
+---
+title: Tilted-crease model
+description: How CreaseGeometry maps a drag point to (creaseDir, originOnEdge, alpha, dihedral) — the four uniforms that describe an in-flight page turn.
+---
+
+import { Image } from 'astro:assets';
+import cornerPeel from '../../../assets/screenshots/corner-peel-28.png';
+
+The tilted-crease model is the heart of `src/book/CreaseGeometry.ts`. Given a drag point in page-local coordinates, it returns four values that drive the inline `FLIP_VERT` vertex shader:
+
+- `creaseDir` — the unit direction of the crease line (tilted, not necessarily aligned with the spine).
+- `originOnEdge` — the point on the spine where the crease intersects.
+- `alpha` — the tilt angle of the crease relative to the spine.
+- `dihedral` — the angle the lifted flap has rotated through.
+
+<Image src={cornerPeel} alt="A correctly-tilted crease at peak dihedral. The fiducial dot grid shows the lifted flap region." />
+
+## Why the crease tilts
+
+A real page that you grab at the bottom-right corner and pull toward the spine doesn't pivot around a perfectly vertical axis — it pivots around a line from the spine corner up through the page. The whole bottom-right region lifts; the top-right region stays nearly flat. `creaseDir` and `originOnEdge` together describe that pivot line.
+
+The shader's flap classifier asks, for each vertex: "am I on the lifted side of the crease line?" Vertices on the lifted side rotate by `dihedral`; vertices on the static side stay put.
+
+## Mapping drag to dihedral
+
+The dihedral angle is monotone in horizontal pull, with a `Math.min(1, …)` clamp at full-fold:
+
+```
+const span = isReverse ? 2 * W : W;
+dihedral   = π * Math.min(1, dragHorizontalPull / span);
+```
+
+Reverse turns get a `2W` span because the drag has to pull the page from the previous spread back across the spine — twice the geometric distance.
+
+:::caution[Mutation-coverage gap]
+The `2 * W` constant survived a `2 / W` mutation in the [mutation testing report](/pageturn-demo/testing/mutation-testing/) because every reverse-turn test only checked the saturation clamp, not an intermediate point. A `dihedral mapping (reverse) is linear in horizontal pull below saturation` test would kill it.
+:::
+
+## Spine projection — the `originY` calculation
+
+The crease line is defined by the corner you grabbed and the drag point. Where it crosses the spine (`x = 0`) is `originOnEdge`. The raw projection is:
+
+```
+const rawSpineY = My - Mx * perpY / perpX;
+originY        = limit * Math.tanh(rawSpineY / limit);   // limit = 0.7
+```
+
+The `tanh` keeps `originY` inside the page bounds (`±0.7` of page height) even for extreme drags — without it, a drag pulled almost parallel to the spine would put `originY` at infinity.
+
+## Crease direction canonicalization
+
+After computing `creaseDir`, the code flips it if it points down the page:
+
+```ts
+if (creaseDirY < 0) {
+  creaseDirX = -creaseDirX;
+  creaseDirY = -creaseDirY;
+}
+```
+
+This guarantees `creaseDir.y >= 0` so downstream "which side is lifted" tests have a stable convention.
+
+:::caution[Untested branch]
+Every drag in the existing test suite produces `perpY ≥ 0` (drag is always *toward* the spine), so this branch never fires in tests. A `drag away from spine` parametrized test would exercise it.
+:::
+
+## Going further
+
+The cross-page consequences of getting this wrong are in [Spine constraint](/pageturn-demo/architecture/spine-constraint/). The forward-looking math model that replaces `sin(2φ)` with a true cylindrical isometry is in the [page model PRD](/pageturn-demo/design/page-model/).

@@ -1,0 +1,61 @@
+---
+title: Quickstart
+description: Install, run, build, and explore the pageturn-demo prototype in under a minute.
+---
+
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+An interactive 3D book built with Three.js, TypeScript, and Vite. Features drag-to-turn pages with physics settle, a gravity-based curl shader, rich procedural content, and a Big Buck Bunny video spread.
+
+## Install and run
+
+<Steps>
+
+1. Clone the repository and install dependencies (Node 22 LTS or newer):
+
+   ```bash
+   git clone https://github.com/stuffbucket/pageturn-demo.git
+   cd pageturn-demo
+   npm install
+   ```
+
+2. Start the dev server (Vite, default port 5173):
+
+   ```bash
+   npm run dev
+   ```
+
+3. Open [http://localhost:5173](http://localhost:5173) and drag the book pages.
+
+</Steps>
+
+## Controls
+
+- **Click-drag** pages to turn.
+- **Arrow keys** or the **prev / next** buttons step a single spread.
+- **Right-drag** to orbit; **scroll** to zoom (OrbitControls auto-disable during a page drag).
+
+## Common scripts
+
+```bash
+npm run dev          # dev server at localhost:5173
+npm run build        # type-check then Vite production build
+npm test             # run all Vitest suites
+npm run test:coverage  # generate coverage report
+```
+
+See the [npm script catalog](/pageturn-demo/reference/npm-script-catalog/) for the full list (mutation testing, harness, etc.).
+
+## Architecture in one paragraph
+
+`src/main.ts` owns the scene, camera, and drag system. `src/book/Book.ts` is the rendering orchestrator — two static spread meshes plus a third animated `turningPageMesh` and a crease shadow strip. `src/book/BookState.ts` is a *pure* state machine (no Three.js imports) that owns the discrete spread index `j` and the turn angle `φ`. Procedural canvas textures live in `src/textures/atlas.ts`. The full breakdown lives in [Architecture &rarr; Overview](/pageturn-demo/architecture/overview/).
+
+:::tip[Where the math lives]
+The active page-curl vertex shader is **inlined** in `Book.ts` as the `FLIP_VERT` constant. The legacy files in `src/shaders/` are unused. See [Tilted-crease model](/pageturn-demo/architecture/tilted-crease-model/) for the equations.
+:::
+
+## Where to go next
+
+- Hit a bug? Don't ask the user — capture the state. See [Inner-loop debugging](/pageturn-demo/get-started/inner-loop-debugging/).
+- Want to know what's getting tested (and what isn't)? Read the [test suite audit](/pageturn-demo/testing/test-suite-audit/).
+- Curious about the upcoming developable-surface page model? Read the [page model PRD](/pageturn-demo/design/page-model/).

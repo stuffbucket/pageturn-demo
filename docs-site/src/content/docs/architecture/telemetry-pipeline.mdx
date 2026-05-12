@@ -1,0 +1,71 @@
+---
+title: Telemetry pipeline
+description: One JSON event per line, written to /tmp/pageturn-telemetry.jsonl by the Vite dev plugin. Tail it with jq.
+---
+
+The telemetry stream is the cheapest of the four feedback streams: a single shell pipeline gives you a real-time view of every state change. It's how you answer "did event X actually fire?" without poking a debugger.
+
+## Where it lives
+
+- **Browser side:** `src/telemetry.ts` exposes `emitTelemetry(eventName, payload)`. Call sites are sprinkled across `BookState.ts`, `Book.ts`, `main.ts`, and `long-press-capture.ts`.
+- **Server side:** the Vite dev plugin in `vite.config.ts` (~line 18, ~line 174) exposes `POST /__telemetry` and appends each event as one JSON line to `/tmp/pageturn-telemetry.jsonl`.
+- **Enable:** `?telemetry=1` URL flag.
+
+## Sample event lines
+
+Tailing during a single corner-peel-then-cancel gesture:
+
+```jsonl
+{"t":1240,"event":"pointer-down","spread":4,"px":0.83,"py":0.21}
+{"t":1245,"event":"drag-start","spread":4,"corner":[1,-1]}
+{"t":1310,"event":"state-transition","op":"startTurn","fromJ":4,"toJ":5,"isReverse":false}
+{"t":1310,"event":"crease-update","creaseDir":[0.91,0.41],"originY":0.28,"alpha":0.42,"dihedral":0.18}
+{"t":1380,"event":"crease-update","creaseDir":[0.92,0.39],"originY":0.31,"alpha":0.40,"dihedral":0.92}
+{"t":1455,"event":"pointer-up","spread":4,"px":0.42,"py":0.18}
+{"t":1455,"event":"settle-start","p":0.29,"v":-0.04,"target":0,"reason":"below-commit-threshold"}
+{"t":1532,"event":"settle-end","p":0.0,"frames":7}
+{"t":1532,"event":"state-transition","op":"cancelTurn","fromJ":5,"toJ":4,"isReverse":false}
+```
+
+Each line is timestamped in milliseconds since page load and tagged with an `event` discriminator.
+
+## Reading the stream live
+
+```bash
+tail -f /tmp/pageturn-telemetry.jsonl | jq -c
+```
+
+Or just the state transitions:
+
+```bash
+tail -f /tmp/pageturn-telemetry.jsonl | jq -c 'select(.event == "state-transition")'
+```
+
+For agent workflows: run `tail -f` under the Monitor tool (or `run_in_background`) so you get notified on every new event line.
+
+## Sample summary query
+
+How many turns committed vs cancelled in this session?
+
+```bash
+jq -c 'select(.event == "state-transition") | .op' /tmp/pageturn-telemetry.jsonl \
+  | sort | uniq -c
+```
+
+```text
+   3 "cancelTurn"
+   2 "completeTurn"
+   5 "startTurn"
+```
+
+## Coverage gap
+
+:::caution[Telemetry semantics aren't tested]
+The mutation testing report identified ~14 surviving mutants across `BookState.ts:290, 312, 461, 480` because **no test mocks `emitTelemetry` and asserts what was emitted**. A mutation that renames `'state-transition'` to `'state-transitioned'` survives. If the telemetry payload shape is part of the contract (it looks like it is — it's documented here and consumed by the agent recipe), it should be tested. Read more in [Mutation testing](/pageturn-demo/testing/mutation-testing/).
+:::
+
+## Cross-references
+
+- [Inner-loop debugging](/pageturn-demo/get-started/inner-loop-debugging/) — when to reach for telemetry vs the other three streams.
+- [URL flag matrix](/pageturn-demo/reference/url-flag-matrix/) — every query parameter the dev server understands.
+- [Long-press capture pipeline](/pageturn-demo/architecture/long-press-capture-pipeline/) — the sister stream that captures pixels + JSON state.

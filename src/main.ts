@@ -11,6 +11,7 @@ import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
 import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
 import { developableEnabled } from "./book/DevelopableSurface";
+import { buildInfo } from 'virtual:build-info';
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -616,6 +617,7 @@ class PageTurnDemo {
         target:   { x: this.controls.target.x,  y: this.controls.target.y,  z: this.controls.target.z  },
       },
       fps: this.fps,
+      build: buildInfo,
     };
   }
 

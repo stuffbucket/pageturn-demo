@@ -291,14 +291,26 @@ async function runScenario(
 
 /**
  * Compute world-space position of a fiducial on the turning right-page,
- * using the same math as the FLIP_VERT shader plus the book-group X tilt.
+ * using the same math as the active FLIP_VERT shader path.
  *
+ * sin2phi (legacy) path:
  *   t          = u                       (0 at spine, 1 at free edge)
  *   uAngle     = -bookState.phi          (BookState stores |phi|; the
  *                                         shader convention is negative)
  *   phi_v      = uAngle + 0.4 * t * sin(2 * uAngle)
  *   local x'   = origX * cos(phi_v)
  *   local z'   = -origX * sin(phi_v)
+ *
+ * developable path (PRD #11):
+ *   d          = |uAngle|                 (rigid dihedral, positive)
+ *   crease at the spine, k̂ = +ŷ, n̂ = +x̂
+ *   ang        = -d  (lift toward +z)
+ *   n̂'        = (cos d,  0,  sin d)
+ *   b̂'        = (-sin d, 0,  cos d)
+ *   s          = origX,  effS = max(s − exempt, 0),  rigidS = min(s, exempt)
+ *   sinR       = R · sin(effS / R),  verR = R · (1 − cos(effS / R))
+ *   local pos  = rigidS·n̂' + sinR·n̂' + verR·b̂'
+ *
  *   local y    = (v - 0.5) * pageHeight
  *   world      = Rx(-BOOK_TILT) * (x', y, z')
  */
@@ -306,11 +318,31 @@ function fiducialWorldPosition(
   uAngle: number,
   u: number,
   v: number,
+  developable = false,
+  curlR = 1e6,
+  exempt = 0,
 ): { x: number; y: number; z: number } {
   const origX = u * PAGE_WIDTH;
-  const phi = uAngle + BEND_AMOUNT * u * Math.sin(2 * uAngle);
-  const localX = origX * Math.cos(phi);
-  const localZ = -origX * Math.sin(phi);
+  let localX: number;
+  let localZ: number;
+  if (developable) {
+    const d = Math.abs(uAngle);
+    const cosD = Math.cos(d);
+    const sinD = Math.sin(d);
+    const rigidS = Math.min(origX, exempt);
+    const effS = Math.max(origX - exempt, 0);
+    const safeR = curlR > 1e-4 ? curlR : 1e-4;
+    const theta = effS / safeR;
+    const sinR = safeR * Math.sin(theta);
+    const verR = safeR * (1 - Math.cos(theta));
+    // n̂' = (cosD, 0, sinD); b̂' = (-sinD, 0, cosD)
+    localX = (rigidS + sinR) * cosD - verR * sinD;
+    localZ = (rigidS + sinR) * sinD + verR * cosD;
+  } else {
+    const phi = uAngle + BEND_AMOUNT * u * Math.sin(2 * uAngle);
+    localX = origX * Math.cos(phi);
+    localZ = -origX * Math.sin(phi);
+  }
   const localY = (v - 0.5) * PAGE_HEIGHT;
   // Rotate around X by -BOOK_TILT: (y, z) -> (y*cos - z*sin, y*sin + z*cos)
   const c = Math.cos(-BOOK_TILT);
@@ -371,11 +403,17 @@ async function runScenarioTrajectoriesInner(
     // BookState.phi is the magnitude in [0, π]; the shader uAngle is the
     // negative of that for both forward and reverse turns (see FLIP_VERT).
     const uAngle = -state.getRotationAngle();
+    // Read live developable settings from the Book so the predictor matches
+    // whichever shader path the renderer is using.
+    const isDev = (book as unknown as { isDevelopable?: () => boolean }).isDevelopable?.() ?? false;
+    const stock = (book as unknown as { getPageStock?: () => { R_min: number } }).getPageStock?.();
+    const curlR = stock ? stock.R_min : 1e6;
+    const exempt = 0.01 * PAGE_WIDTH;
     for (let i = 0; i < FIDUCIAL_US.length; i++) {
       for (let j = 0; j < FIDUCIAL_VS.length; j++) {
         const u = FIDUCIAL_US[i];
         const v = FIDUCIAL_VS[j];
-        const p = fiducialWorldPosition(uAngle, u, v);
+        const p = fiducialWorldPosition(uAngle, u, v, isDev, curlR, exempt);
         fiducials[`P_${i}_${j}`].push([tMs, p.x, p.y, p.z]);
       }
     }

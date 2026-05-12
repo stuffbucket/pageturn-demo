@@ -13,6 +13,13 @@ import { BookState, DEFAULT_BOOK_MATERIAL, maxFanCount } from './BookState';
 import type { BookMaterial } from './BookState';
 import { creaseFromDrag, type Crease, type Vec2 } from './CreaseGeometry';
 import { generateBookTextures, TexturePool } from '../textures/atlas';
+import {
+  developableEnabled,
+  INTERIOR_STOCK,
+  DEFAULT_EXEMPTION_HALF_WIDTH,
+  FLAT_RADIUS,
+  type PageStock,
+} from './DevelopableSurface';
 
 export interface BookParams {
   numLeaves: number;
@@ -21,21 +28,45 @@ export interface BookParams {
   curlRadius?: number;   // kept for API compat, unused in flat-flip mode
   textureSize?: number;
   material?: BookMaterial;
+  /**
+   * Use the developable-surface page model (PRD #11) instead of the
+   * legacy sin2phi shader. Default: read from URL flag ?dev-surface=1.
+   * Tests pass an explicit value so they don't depend on URL state.
+   */
+  useDevelopable?: boolean;
+  /**
+   * Page-stock material parameters (D, R_min) for the developable model.
+   * Ignored when useDevelopable is false. Default: INTERIOR_STOCK.
+   */
+  pageStock?: PageStock;
 }
 
 // Vertex shader: tilted-crease (turn.js-inspired) page fold.
 //
-// The folded "flap" is the half-plane on the corner-side of the crease line
-// (uCreaseOrigin, uCreaseDir).  Vertices on the spine-side stay flat; flap
-// vertices are rotated about the crease axis (in 3D, a horizontal line through
-// uCreaseOrigin in the page plane, direction uCreaseDir, k.z = 0).
+// Two model paths share this shader, switched by uUseDevelopable at boot
+// (PRD #11):
 //
-// The bend envelope sin(2·dihedral) is preserved from the original model but
-// applied to a per-vertex t = (signed flap distance) / uMaxFlapDist, so the
-// free edge lags / leads as before.
+//   • sin2phi  (uUseDevelopable = 0): legacy per-vertex envelope
+//        φ(t) = uDihedral + uBendAmount · t · sin(2 · uDihedral)
+//     A perceptual hack — adds free-edge lag at the cost of membrane
+//     strain.  Default until the developable path is shown to land FR-P1
+//     on every baseline.
 //
-// Rotation by -phi is applied (matches the original "lift toward +z" sign
-// convention for forward turns).  uCreaseDir always has y >= 0.
+//   • developable  (uUseDevelopable = 1): rigid rotation by uDihedral
+//     around the (tilted) crease axis, plus a uniform-R cylindrical curl
+//     parallel to the crease.  See `DevelopableSurface.ts` for the math
+//     and `docs/prd-page-model.md` for the FRs.  Geodesic distance on
+//     the rest sheet is preserved (FR-P1).
+//
+// Common to both paths:
+//   - flap classifier: vertex is in the flap iff x > spineEps && s > 0
+//   - spine vertices (x ≈ 0) never rotate (binding constraint)
+//   - rotation sign convention: -phi so flap lifts toward +z
+//
+// Crease exemption (FR-P5, developable path only): vertices with
+// |s| < uExemptionHalfWidth do not get the curl term — they undergo
+// rigid rotation only, modeling the small plastic-fold zone next to the
+// crease line.
 const FLIP_VERT = /* glsl */`
   uniform vec2 uCreaseOrigin;
   uniform vec2 uCreaseDir;
@@ -43,7 +74,17 @@ const FLIP_VERT = /* glsl */`
   uniform float uMaxFlapDist;
   uniform float uDihedral;
   uniform float uBendAmount;
+  uniform float uUseDevelopable;   // 0 = sin2phi, 1 = developable cylindrical curl
+  uniform float uCurlRadius;       // R in page-local units; large value = "flat"
+  uniform float uExemptionHalfWidth; // FR-P5 crease-exempt strip half-width
   varying vec2 vUv;
+
+  // Rodrigues rotation of v by angle ang around unit axis k.
+  vec3 rodrigues(vec3 v, vec3 k, float ang) {
+    float c = cos(ang);
+    float si = sin(ang);
+    return v * c + cross(k, v) * si + k * dot(k, v) * (1.0 - c);
+  }
 
   void main() {
     vUv = uv;
@@ -72,21 +113,54 @@ const FLIP_VERT = /* glsl */`
       // silhouette.  A small smoothstep band centred on 's = 0' interpolates
       // between flat and rotated geometry across one cell of mesh, hiding
       // the discontinuity while preserving full rotation away from the band.
-      float t = clamp(s / max(uMaxFlapDist, 1e-6), 0.0, 1.0);
-      // Same gravity-bend envelope as the legacy model — but measured from
-      // the (tilted) crease line rather than the spine.
-      float phi = uDihedral + uBendAmount * t * sin(2.0 * uDihedral);
-
       vec3 k = vec3(uCreaseDir, 0.0);
-      vec3 rel = pos - vec3(uCreaseOrigin, 0.0);
+      vec3 flapPos;
 
-      // Negative angle so the flap lifts toward +z (matches the legacy
-      // forward-turn convention; uCreaseDir.y >= 0).
-      float ang = -phi;
-      float c = cos(ang);
-      float si = sin(ang);
-      vec3 rotated = rel * c + cross(k, rel) * si + k * dot(k, rel) * (1.0 - c);
-      vec3 flapPos = vec3(uCreaseOrigin, 0.0) + rotated;
+      if (uUseDevelopable > 0.5) {
+        // Developable / cylindrical-curl path. Decompose vertex into
+        //   (s, u) = (signed flap distance, along-crease offset)
+        // Rest position relative to crease origin is s·n̂ + u·k̂ where
+        // n̂ = cornerDir lifted to 3D.
+        float u = dot(rel2, uCreaseDir);
+        vec3 n = vec3(uCornerDir, 0.0);
+
+        // Negative angle so flap lifts toward +z (matches sin2phi sign).
+        float ang = -uDihedral;
+        vec3 nPrime = rodrigues(n, k, ang);
+        // b̂' = rotate ẑ around k by ang.
+        vec3 bPrime = rodrigues(vec3(0.0, 0.0, 1.0), k, ang);
+
+        // Crease exemption (FR-P5): inside the strip, no curl — just the
+        // rigid rotation. Outside, full cylindrical curl with radius R.
+        // Use max(s, 0) for the rigid offset so vertices on the spine side
+        // (s < 0) don't contribute a negative offset before the smoothstep
+        // blend reins them in.
+        float sPos = max(s, 0.0);
+        float effS = max(sPos - uExemptionHalfWidth, 0.0);
+        float R = max(uCurlRadius, 1e-4);
+        float theta = effS / R;
+        float sinR = R * sin(theta);
+        float verR = R * (1.0 - cos(theta));
+
+        float rigidS = min(sPos, uExemptionHalfWidth);
+        vec3 rigidPart = rigidS * nPrime;
+        vec3 curlPart  = sinR * nPrime + verR * bPrime;
+        vec3 alongCrease = u * k;
+
+        flapPos = vec3(uCreaseOrigin, 0.0) + rigidPart + curlPart + alongCrease;
+      } else {
+        // sin2phi (legacy) path.
+        float t = clamp(s / max(uMaxFlapDist, 1e-6), 0.0, 1.0);
+        // Same gravity-bend envelope as the legacy model — but measured from
+        // the (tilted) crease line rather than the spine.
+        float phi = uDihedral + uBendAmount * t * sin(2.0 * uDihedral);
+        vec3 rel = pos - vec3(uCreaseOrigin, 0.0);
+        // Negative angle so the flap lifts toward +z (matches the legacy
+        // forward-turn convention; uCreaseDir.y >= 0).
+        float ang = -phi;
+        vec3 rotated = rodrigues(rel, k, ang);
+        flapPos = vec3(uCreaseOrigin, 0.0) + rotated;
+      }
 
       // Smooth blend band ≈ half a tessellation cell wide.  uMaxFlapDist is
       // a worst-case page-corner distance, so this is a small fraction of
@@ -137,6 +211,8 @@ export class Book {
   private pageHeight: number;
   private numLeaves: number;
   private material: BookMaterial;
+  private useDevelopable: boolean;
+  private pageStock: PageStock;
 
   // Two meshes that always show the current resting spread.
   private leftMesh: THREE.Mesh;
@@ -169,6 +245,8 @@ export class Book {
     this.pageWidth  = params.pageWidth  ?? 1.0;
     this.pageHeight = params.pageHeight ?? 1.4;
     this.material   = params.material   ?? DEFAULT_BOOK_MATERIAL;
+    this.useDevelopable = params.useDevelopable ?? developableEnabled();
+    this.pageStock = params.pageStock ?? INTERIOR_STOCK;
 
     this.state    = new BookState(this.numLeaves);
     this.state.setPageSize(this.pageWidth, this.pageHeight);
@@ -346,14 +424,17 @@ export class Book {
     initialMaxFlapDist: number,
   ): Record<string, THREE.IUniform> {
     return {
-      frontTexture:   { value: frontTex },
-      backTexture:    { value: backTex  },
-      uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
-      uCreaseDir:     { value: new THREE.Vector2(0, 1) },
-      uCornerDir:     { value: new THREE.Vector2(1, 0) },
-      uMaxFlapDist:   { value: initialMaxFlapDist },
-      uDihedral:      { value: 0 },
-      uBendAmount:    { value: 0.4 },
+      frontTexture:        { value: frontTex },
+      backTexture:         { value: backTex  },
+      uCreaseOrigin:       { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
+      uCreaseDir:          { value: new THREE.Vector2(0, 1) },
+      uCornerDir:          { value: new THREE.Vector2(1, 0) },
+      uMaxFlapDist:        { value: initialMaxFlapDist },
+      uDihedral:           { value: 0 },
+      uBendAmount:         { value: 0.4 },
+      uUseDevelopable:     { value: this.useDevelopable ? 1 : 0 },
+      uCurlRadius:         { value: this.developableCurlRadius() },
+      uExemptionHalfWidth: { value: DEFAULT_EXEMPTION_HALF_WIDTH * this.pageWidth },
     };
   }
 
@@ -461,6 +542,25 @@ export class Book {
     u.uMaxFlapDist.value = maxFlap;
     u.uDihedral.value = crease.dihedral;
   }
+
+  /**
+   * Curl radius for the developable model, in page-local units (pageWidth=1).
+   * v1: a single radius per page-stock — the cover stock curls less than the
+   * interior stock under the same drag (FR-P3). The PRD §"Practical
+   * implication" derives R from D and the gravity moment; the moment is
+   * not yet plumbed through the state machine, so we use stock.R_min as a
+   * conservative initial value (tightest curl the stock allows).
+   * Driving R from drag dynamics is a follow-up tied to the settle PRD.
+   */
+  private developableCurlRadius(): number {
+    if (!this.useDevelopable) return FLAT_RADIUS;
+    return this.pageStock.R_min;
+  }
+
+  /** Whether the developable-surface shader path is active. Read-only. */
+  isDevelopable(): boolean { return this.useDevelopable; }
+  /** Active page stock for the developable model. */
+  getPageStock(): PageStock { return this.pageStock; }
 
   // ── Public API ────────────────────────────────────────────────────────────
 

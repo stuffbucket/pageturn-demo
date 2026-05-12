@@ -29,6 +29,7 @@ interface BuildInfo {
   commit: string
   commitShort: string
   commitDate: string
+  commitDateUtc: string
   branch: string
   dirty: boolean
   worktreePath: string
@@ -37,6 +38,7 @@ interface BuildInfo {
   repoSlug: string
   pr: { number: number; title: string; url: string } | null
   serverStartedAt: string
+  goal: string | null
 }
 
 /**
@@ -62,6 +64,43 @@ function normalizeRemoteUrl(raw: string): string {
 function extractRepoSlug(normalizedUrl: string): string {
   const m = normalizedUrl.match(/^https?:\/\/[^/]+\/([^/]+\/[^/]+)$/)
   return m ? m[1] : ''
+}
+
+/**
+ * Convert an ISO 8601 timestamp with any offset to UTC ISO 8601 with `Z`
+ * suffix. Returns empty string for empty input and falls back to the raw
+ * input if Date parsing fails (so we never silently emit "Invalid Date").
+ */
+function toUtcIso(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toISOString()
+}
+
+/**
+ * Resolve the human-readable build goal. Precedence (first non-empty wins):
+ *   1. env var `PAGETURN_BUILD_GOAL`
+ *   2. file `<worktreeRoot>/.build-goal` (trimmed; gitignored)
+ *   3. PR title (caller passes the gh-discovered PR object)
+ *   4. null
+ */
+function resolveGoal(
+  worktreeRoot: string,
+  pr: { title: string } | null,
+): string | null {
+  const env = process.env.PAGETURN_BUILD_GOAL
+  if (env && env.trim()) return env.trim()
+  if (worktreeRoot) {
+    try {
+      const raw = fs.readFileSync(path.join(worktreeRoot, '.build-goal'), 'utf8').trim()
+      if (raw) return raw
+    } catch {
+      // Missing / unreadable — fall through.
+    }
+  }
+  if (pr && pr.title) return pr.title
+  return null
 }
 
 /**
@@ -123,6 +162,7 @@ function captureBuildInfo(): BuildInfo {
     commit,
     commitShort,
     commitDate,
+    commitDateUtc: toUtcIso(commitDate),
     branch,
     dirty,
     worktreePath,
@@ -130,7 +170,9 @@ function captureBuildInfo(): BuildInfo {
     remoteUrl,
     repoSlug,
     pr,
+    // `Date#toISOString()` always emits a UTC `Z`-suffixed string.
     serverStartedAt: new Date().toISOString(),
+    goal: resolveGoal(worktreePath, pr),
   }
 }
 

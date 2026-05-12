@@ -46,3 +46,9 @@ reports/
 docs-site/node_modules
 docs-site/dist
 docs-site/.astro
+
+# Per-developer build-goal annotation surfaced via the build-info Vite plugin
+# (vite.config.ts). Free-form one-liner describing what the current dev
+# server is for; read at server-start and exposed via `virtual:build-info`
+# / GET /__build-info. Per-developer scratch — don't commit.
+.build-goal

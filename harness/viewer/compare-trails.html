@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Trajectory Trail Viewer</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #12111f;
+      color: #eee;
+    }
+    header {
+      padding: 12px 16px;
+      background: #1c1b2e;
+      border-bottom: 1px solid #2a2940;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    header label { font-size: 13px; opacity: 0.8; }
+    header input[type=file] { color: #ccc; }
+    header select { background: #2a2940; color: #eee; border: 1px solid #3a3950; padding: 4px 8px; }
+    #meta { font-size: 12px; opacity: 0.7; }
+    main { padding: 16px; }
+    canvas { background: #1a1828; display: block; border: 1px solid #2a2940; }
+    .legend {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      font-size: 11px;
+      max-width: 900px;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .legend i { width: 10px; height: 10px; border: 1px solid #000; display: inline-block; }
+  </style>
+</head>
+<body>
+  <header>
+    <label>Load trajectory JSON: <input id="file" type="file" accept=".json" /></label>
+    <label>View:
+      <select id="view">
+        <option value="xz">Top (X-Z)</option>
+        <option value="xy">Front (X-Y)</option>
+        <option value="yz">Side (Y-Z)</option>
+      </select>
+    </label>
+    <span id="meta"></span>
+  </header>
+  <main>
+    <canvas id="canvas" width="900" height="700"></canvas>
+    <div class="legend" id="legend"></div>
+  </main>
+  <script>
+    const fileEl = document.getElementById('file');
+    const viewEl = document.getElementById('view');
+    const metaEl = document.getElementById('meta');
+    const legendEl = document.getElementById('legend');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let data = null;
+
+    function colorFor(i, j) {
+      const idx = j * 5 + i;
+      const hue = (idx * 360) / 35;
+      return `hsl(${hue}, 90%, 55%)`;
+    }
+
+    function projection(p, view) {
+      // p = [t, x, y, z]
+      switch (view) {
+        case 'xz': return { px: p[1], py: -p[3] }; // top-down: x right, -z forward up
+        case 'xy': return { px: p[1], py: -p[2] }; // front: y up (flip canvas)
+        case 'yz': return { px: -p[3], py: -p[2] }; // side
+      }
+    }
+
+    function render() {
+      ctx.fillStyle = '#1a1828';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!data) return;
+      const view = viewEl.value;
+
+      // Compute extents across all fiducials.
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const key of Object.keys(data.fiducials)) {
+        for (const p of data.fiducials[key]) {
+          const { px, py } = projection(p, view);
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
+        }
+      }
+      const pad = 30;
+      const rangeX = (maxX - minX) || 1;
+      const rangeY = (maxY - minY) || 1;
+      const scale = Math.min(
+        (canvas.width  - 2 * pad) / rangeX,
+        (canvas.height - 2 * pad) / rangeY,
+      );
+      const offX = pad - minX * scale + ((canvas.width  - 2 * pad) - rangeX * scale) / 2;
+      const offY = pad - minY * scale + ((canvas.height - 2 * pad) - rangeY * scale) / 2;
+      const to = (px, py) => [px * scale + offX, py * scale + offY];
+
+      // Axes
+      ctx.strokeStyle = '#2c2b40';
+      ctx.lineWidth = 1;
+      const [ox, oy] = to(0, 0);
+      ctx.beginPath();
+      ctx.moveTo(0, oy); ctx.lineTo(canvas.width, oy);
+      ctx.moveTo(ox, 0); ctx.lineTo(ox, canvas.height);
+      ctx.stroke();
+
+      // Trails
+      legendEl.innerHTML = '';
+      for (let j = 0; j < 7; j++) {
+        for (let i = 0; i < 5; i++) {
+          const key = `P_${i}_${j}`;
+          const arr = data.fiducials[key];
+          if (!arr || arr.length === 0) continue;
+          ctx.strokeStyle = colorFor(i, j);
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          for (let k = 0; k < arr.length; k++) {
+            const { px, py } = projection(arr[k], view);
+            const [cx, cy] = to(px, py);
+            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+          // End-point dot
+          const last = arr[arr.length - 1];
+          const lp = projection(last, view);
+          const [cx, cy] = to(lp.px, lp.py);
+          ctx.fillStyle = colorFor(i, j);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          const sp = document.createElement('span');
+          const i_ = document.createElement('i');
+          i_.style.background = colorFor(i, j);
+          sp.appendChild(i_);
+          sp.appendChild(document.createTextNode(key));
+          legendEl.appendChild(sp);
+        }
+      }
+    }
+
+    fileEl.addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const text = await f.text();
+      data = JSON.parse(text);
+      const ids = Object.keys(data.fiducials);
+      const samples = ids[0] ? data.fiducials[ids[0]].length : 0;
+      metaEl.textContent = `${data.scenario}  -  ${ids.length} fiducials, ~${samples} samples each  -  viewport ${data.viewport.width}x${data.viewport.height}`;
+      render();
+    });
+    viewEl.addEventListener('change', render);
+  </script>
+</body>
+</html>

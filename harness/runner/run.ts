@@ -12,6 +12,7 @@ const __dirname = dirname(__filename);
 const HARNESS_DIR = resolve(__dirname, '..');
 const SCENARIOS_DIR = join(HARNESS_DIR, 'scenarios');
 const OUTPUT_DIR = join(HARNESS_DIR, 'output');
+const TRAJECTORIES_DIR = join(OUTPUT_DIR, 'trajectories');
 
 const BASE_URL = process.env.HARNESS_URL ?? 'http://localhost:5173/harness.html';
 
@@ -31,8 +32,15 @@ async function loadScenarios(only?: string[]): Promise<Scenario[]> {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const all = args.includes('--all');
+  const trajectoriesMode = args.includes('--trajectories');
   const named = args.filter((a) => !a.startsWith('--'));
-  const scenarios = await loadScenarios(all ? undefined : named.length ? named : undefined);
+  // Default to horizontal-pull when running trajectories with no specific scenario.
+  const defaultName = trajectoriesMode && named.length === 0 && !all
+    ? ['horizontal-pull']
+    : undefined;
+  const scenarios = await loadScenarios(
+    all ? undefined : named.length ? named : defaultName,
+  );
 
   if (scenarios.length === 0) {
     console.error(`No scenarios found in ${SCENARIOS_DIR}. Pass --all or a name.`);
@@ -40,6 +48,7 @@ async function main(): Promise<void> {
   }
 
   await mkdir(OUTPUT_DIR, { recursive: true });
+  if (trajectoriesMode) await mkdir(TRAJECTORIES_DIR, { recursive: true });
 
   const browser = await chromium.launch({
     headless: true,
@@ -71,6 +80,23 @@ async function main(): Promise<void> {
       // Hard wall-clock ceiling per scenario — the in-page watchdog gives us
       // a nicer error, but if even *that* hangs we still want the runner to die.
       const wallTimeoutMs = Math.max(60_000, scenario.duration * 30);
+
+      if (trajectoriesMode) {
+        const result = await Promise.race([
+          page.evaluate(async (s) => window.__harness!.runScenarioTrajectories!(s), scenario),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`runner timeout: ${scenario.name} > ${wallTimeoutMs}ms`)), wallTimeoutMs),
+          ),
+        ]);
+        const outPath = join(TRAJECTORIES_DIR, `${scenario.name}.json`);
+        await writeFile(outPath, JSON.stringify(result, null, 2));
+        const ids = Object.keys(result.fiducials);
+        const samplesPerId = ids[0] ? result.fiducials[ids[0]].length : 0;
+        console.log(`  ✓ wrote ${outPath}  (${ids.length} fiducials, ${samplesPerId} samples each)`);
+        await ctx.close();
+        continue;
+      }
+
       const result = await Promise.race([
         page.evaluate(async (s) => window.__harness!.runScenario(s), scenario),
         new Promise<never>((_, reject) =>

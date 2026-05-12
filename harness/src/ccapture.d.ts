@@ -32,9 +32,32 @@ export interface RunOptions {
   quality?: number;
 }
 
+export interface TrajectorySample {
+  /** Time in ms since the start of the scenario. */
+  t: number;
+  /** World-space x coordinate. */
+  x: number;
+  /** World-space y coordinate. */
+  y: number;
+  /** World-space z coordinate. */
+  z: number;
+}
+
+export interface TrajectoryResult {
+  scenario: string;
+  viewport: { width: number; height: number };
+  /** Map of fiducial id "P_i_j" -> sequence of [t_ms, x, y, z] tuples. */
+  fiducials: Record<string, number[][]>;
+}
+
 export interface HarnessAPI {
   ready: Promise<void>;
   runScenario: (scenario: Scenario, opts?: RunOptions) => Promise<{ base64: string; mimeType: string }>;
+  /**
+   * Replay a scenario and, on each sampled frame, record world-space
+   * positions of all 5x7 fiducial markers on the turning page.
+   */
+  runScenarioTrajectories: (scenario: Scenario, opts?: RunOptions) => Promise<TrajectoryResult>;
 }
 
 export {};

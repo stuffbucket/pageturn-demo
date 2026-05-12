@@ -12,6 +12,84 @@ import * as THREE from 'three';
 /** Page aspect ratio: width 1.0, height 1.4. */
 const PAGE_ASPECT = 1.4;
 
+// ── Fiducial overlay (?fiducials=1) ──────────────────────────────────────────
+//
+// When enabled via the URL flag, every page texture is overlaid with a labeled
+// 5×7 grid of colored dots. Each dot has a unique HSL hue so it can be tracked
+// across the page surface during a turn. The grid is used by the harness
+// trajectory-capture mode to validate the FLIP_VERT shader math.
+
+/** u positions for the 5×7 fiducial grid (along page width). */
+export const FIDUCIAL_US = [0.1, 0.3, 0.5, 0.7, 0.9];
+/** v positions for the 5×7 fiducial grid (along page height). */
+export const FIDUCIAL_VS = [0.08, 0.22, 0.36, 0.50, 0.64, 0.78, 0.92];
+
+/** Whether the ?fiducials=1 URL flag is set. */
+export function fiducialsEnabled(): boolean {
+  if (typeof location === 'undefined') return false;
+  try {
+    return new URLSearchParams(location.search).get('fiducials') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Draw the labeled 5×7 fiducial dot grid onto a context.
+ *
+ * Two coordinate modes:
+ *   - aspectCorrected = true:  ctx has ctx.scale(PAGE_ASPECT, 1) already
+ *     applied (canvases produced by createCanvas). Width to draw within is
+ *     `w = size / PAGE_ASPECT`; height is `size`.
+ *   - aspectCorrected = false: raw square canvas (video spreads). Width and
+ *     height are both `size`.
+ */
+export function drawFiducials(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  aspectCorrected = true,
+): void {
+  const w = aspectCorrected ? size / PAGE_ASPECT : size;
+  const h = size;
+  const r = size * 0.01; // radius ≈ 1% of texture size
+  ctx.save();
+  // Reset shadows / alpha to fully opaque for fiducial visibility.
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  let idx = 0;
+  for (let j = 0; j < FIDUCIAL_VS.length; j++) {
+    for (let i = 0; i < FIDUCIAL_US.length; i++) {
+      const hue = (idx * 360) / 35;
+      const cx = FIDUCIAL_US[i] * w;
+      const cy = FIDUCIAL_VS[j] * h;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `hsl(${hue}, 90%, 55%)`;
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, size * 0.001);
+      ctx.strokeStyle = '#000';
+      ctx.stroke();
+      // Tiny label
+      ctx.fillStyle = '#000';
+      ctx.font = `${size * 0.012}px monospace`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`P_${i}_${j}`, cx + r * 1.3, cy);
+      idx++;
+    }
+  }
+  ctx.restore();
+}
+
+/** Apply fiducials to a canvas if the flag is set. Returns the canvas for chaining. */
+function maybeFiducials(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  aspectCorrected = true,
+): void {
+  if (fiducialsEnabled()) drawFiducials(ctx, size, aspectCorrected);
+}
+
 /**
  * Create a canvas whose coordinate system compensates for the page's 1:1.4
  * aspect stretch.  We apply ctx.scale(PAGE_ASPECT, 1) so that text and shapes
@@ -92,7 +170,7 @@ function drawFrontCover(s: number): THREE.CanvasTexture {
     x.save(); x.translate(cx + i * 18, s * 0.82); x.rotate(Math.PI / 4);
     x.strokeRect(-5, -5, 10, 10); x.restore();
   }
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawBackCover(s: number): THREE.CanvasTexture {
@@ -118,7 +196,7 @@ function drawBackCover(s: number): THREE.CanvasTexture {
   x.font = `${s * 0.02}px monospace`;
   x.fillText('ISBN 978-0-000000-00-0', cx, s * 0.88);
   x.globalAlpha = 1;
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawEndpaper(s: number): THREE.CanvasTexture {
@@ -138,7 +216,7 @@ function drawEndpaper(s: number): THREE.CanvasTexture {
     x.beginPath(); x.moveTo(i, 0); x.lineTo(i + w * 0.2, s); x.stroke();
   }
   x.globalAlpha = 1;
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Interior pages ───────────────────────────────────────────────────────────
@@ -161,7 +239,7 @@ function drawTitlePage(s: number): THREE.CanvasTexture {
   x.fillStyle = '#c0b8a8';
   x.font = `${s * 0.025}px Georgia, serif`;
   x.fillText('MMXXVI', cx, s * 0.75);
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawPoemPage(s: number): THREE.CanvasTexture {
@@ -211,7 +289,7 @@ function drawPoemPage(s: number): THREE.CanvasTexture {
   x.font = `italic ${s * 0.022}px Georgia, serif`;
   x.textAlign = 'right';
   x.fillText('\u2014 Robert Frost, 1916', w - m, s * 0.9);
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawPullQuotePage(s: number): THREE.CanvasTexture {
@@ -232,7 +310,7 @@ function drawPullQuotePage(s: number): THREE.CanvasTexture {
   x.fillText('\u2014 J.R.R. Tolkien', cx, s * 0.65);
   x.strokeStyle = '#c0b8a8'; x.lineWidth = 0.5;
   x.beginPath(); x.moveTo(w * 0.35, s * 0.72); x.lineTo(w * 0.65, s * 0.72); x.stroke();
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawColophonPage(s: number): THREE.CanvasTexture {
@@ -254,7 +332,7 @@ function drawColophonPage(s: number): THREE.CanvasTexture {
   ];
   let y = s * 0.4;
   for (const l of lines) { if (l === '') { y += s * 0.03; continue; } x.fillText(l, w / 2, y); y += s * 0.04; }
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Text-heavy pages (cream bg, dark text — showcases crease visibility) ────
@@ -313,7 +391,7 @@ function drawProsePage(s: number): THREE.CanvasTexture {
   x.font = `${s * 0.018}px Georgia, serif`;
   x.textAlign = 'center';
   x.fillText('9', w / 2, s * 0.95);
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawProsePage2(s: number): THREE.CanvasTexture {
@@ -365,7 +443,7 @@ function drawProsePage2(s: number): THREE.CanvasTexture {
   x.font = `${s * 0.018}px Georgia, serif`;
   x.textAlign = 'center';
   x.fillText('10', w / 2, s * 0.95);
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Table of Contents ────────────────────────────────────────────────────────
@@ -433,7 +511,7 @@ function drawTocPage(s: number): THREE.CanvasTexture {
     y += s * 0.10;
   }
 
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Section Introduction Pages ───────────────────────────────────────────────
@@ -529,7 +607,7 @@ function drawSectionIntroPage(s: number, config: SectionIntroConfig): THREE.Canv
   x.lineTo(right, s * 0.90);
   x.stroke();
 
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawSection1Intro(s: number): THREE.CanvasTexture {
@@ -617,12 +695,43 @@ function drawSection4Intro(s: number): THREE.CanvasTexture {
 // ── PDF rendered page (loads pre-rendered PNG of the PDF) ─────────────────────
 
 function loadPdfPageTexture(): THREE.Texture {
+  if (fiducialsEnabled()) return loadImageWithFiducials('/images/pagecurl-full.png', 1024);
   const loader = new THREE.TextureLoader();
   const texture = loader.load('/images/pagecurl-full.png');
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
   return texture;
+}
+
+/**
+ * Load an external image into a canvas and overlay fiducials. Returns a
+ * CanvasTexture whose pixels are updated once the image arrives.
+ */
+function loadImageWithFiducials(url: string, s: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#faf6f0'; ctx.fillRect(0, 0, s, s);
+  drawFiducials(ctx, s, false);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    ctx.clearRect(0, 0, s, s);
+    // Cover-fit
+    const ar = img.width / img.height;
+    let dw = s, dh = s;
+    if (ar > 1) { dh = s / ar; } else { dw = s * ar; }
+    ctx.drawImage(img, (s - dw) / 2, (s - dh) / 2, dw, dh);
+    drawFiducials(ctx, s, false);
+    tex.needsUpdate = true;
+  };
+  img.src = url;
+  return tex;
 }
 
 // ── Preface page (facing the TOC) ────────────────────────────────────────────
@@ -680,7 +789,7 @@ function drawPrefacePage(s: number): THREE.CanvasTexture {
     y += lh;
   }
 
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Video info pages (right side of video section intro spreads) ─────────────
@@ -745,7 +854,7 @@ function drawBBBInfoPage(s: number): THREE.CanvasTexture {
   x.font = `italic ${s * 0.016}px Georgia, serif`;
   x.fillText('Source: archive.org/details/BigBuckBunny_124 (self-hosted)', m, s * 0.88);
 
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 function drawVimeoCreditsPage(s: number): THREE.CanvasTexture {
@@ -810,16 +919,16 @@ function drawVimeoCreditsPage(s: number): THREE.CanvasTexture {
   x.font = `italic ${s * 0.016}px Georgia, serif`;
   x.fillText('myshli.com/project/freight-rail', m, s * 0.88);
 
-  return toTexture(c);
+  maybeFiducials(x, s); return toTexture(c);
 }
 
 // ── Unsplash image loader ────────────────────────────────────────────────────
 
 function loadUnsplashTexture(): THREE.Texture {
+  const url = 'https://images.unsplash.com/photo-1507041957456-9c397ce39c97?w=1024&h=1024&fit=crop&q=80';
+  if (fiducialsEnabled()) return loadImageWithFiducials(url, 1024);
   const loader = new THREE.TextureLoader();
-  const texture = loader.load(
-    'https://images.unsplash.com/photo-1507041957456-9c397ce39c97?w=1024&h=1024&fit=crop&q=80',
-  );
+  const texture = loader.load(url);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -877,6 +986,11 @@ function createVimeoVideoTextures(s: number): { left: THREE.Texture; right: THRE
     leftCtx.drawImage(source, offsetX, offsetY, drawW, drawH);
     rightCtx.fillStyle = '#000'; rightCtx.fillRect(0, 0, s, s);
     rightCtx.drawImage(source, offsetX - s, offsetY, drawW, drawH);
+
+    if (fiducialsEnabled()) {
+      drawFiducials(leftCtx, s, false);
+      drawFiducials(rightCtx, s, false);
+    }
 
     leftTex.needsUpdate  = true;
     rightTex.needsUpdate = true;
@@ -962,6 +1076,11 @@ function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THR
     rightCtx.fillStyle = '#000'; rightCtx.fillRect(0, 0, s, s);
     rightCtx.drawImage(video, offsetX - s, offsetY, drawW, drawH);
 
+    if (fiducialsEnabled()) {
+      drawFiducials(leftCtx, s, false);
+      drawFiducials(rightCtx, s, false);
+    }
+
     leftTex.needsUpdate  = true;
     rightTex.needsUpdate = true;
   }
@@ -987,6 +1106,7 @@ function createVideoPlaceholderTextures(s: number): { left: THREE.Texture; right
     x.fillText('video disabled', s / 2, s * 0.55);
     x.font = `${s * 0.14}px Georgia, serif`;
     x.fillText(label, s / 2, s * 0.85);
+    if (fiducialsEnabled()) drawFiducials(x, s, false);
     const t = toTexture(c);
     t.generateMipmaps = false;
     t.minFilter = THREE.LinearFilter;

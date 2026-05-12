@@ -743,7 +743,7 @@ function drawBBBInfoPage(s: number): THREE.CanvasTexture {
   // Small technical note
   x.fillStyle = '#8a7a68';
   x.font = `italic ${s * 0.016}px Georgia, serif`;
-  x.fillText('Source: archive.org/details/BigBuckBunny_124', m, s * 0.88);
+  x.fillText('Source: archive.org/details/BigBuckBunny_124 (self-hosted)', m, s * 0.88);
 
   return toTexture(c);
 }
@@ -895,21 +895,26 @@ function createVimeoVideoTextures(s: number): { left: THREE.Texture; right: THRE
 
 // ── Video spread (Big Buck Bunny, native 16:9 across two pages) ──────────────
 
-// Hosted on archive.org — long-stable mirror, serves Access-Control-Allow-Origin: *
-// so drawImage(video) into a canvas doesn't taint it.
-const BIG_BUCK_BUNNY_URL =
-  'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4';
+// Self-hosted under /public/videos/. drawImage(video) requires an
+// origin-clean canvas for the WebGL upload, and every public BBB mirror we
+// tried (archive.org, media.w3.org, test-videos.co.uk, Blender's own
+// download.blender.org) either omits Access-Control-Allow-Origin entirely or
+// drops it across a redirect. Same-origin sidesteps the CORS dance.
+//
+// To populate the file from a fresh clone:
+//   curl -L -o public/videos/big-buck-bunny.mp4 \
+//     'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4'
+const BIG_BUCK_BUNNY_URL = '/videos/big-buck-bunny.mp4';
 
 function createVideoSpreadTextures(s: number): { left: THREE.Texture; right: THREE.Texture } {
   // Harness mode: skip the video element and render a static placeholder.
   // The harness page sets <body data-harness="1"> before main.ts boots, so
-  // the demo doesn't depend on a remote CDN during automated capture.
+  // the demo doesn't depend on the local mp4 during automated capture.
   if (typeof document !== 'undefined' && document.body?.dataset.harness === '1') {
     return createVideoPlaceholderTextures(s);
   }
 
   const video = document.createElement('video');
-  video.crossOrigin = 'anonymous';
   video.src = BIG_BUCK_BUNNY_URL;
   video.loop = true;
   video.muted = true;

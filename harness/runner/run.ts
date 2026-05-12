@@ -41,7 +41,18 @@ async function main(): Promise<void> {
 
   await mkdir(OUTPUT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      // Explicitly opt in to SwiftShader software WebGL. Chromium has
+      // deprecated the silent auto-fallback; without this flag, future
+      // versions will refuse to create a WebGL context. SwiftShader is
+      // "unsafe" only against Spectre-style cross-origin reads via
+      // malicious GLSL — we run trusted content in an isolated container,
+      // so the label doesn't apply to our threat model.
+      '--enable-unsafe-swiftshader',
+    ],
+  });
   try {
     for (const scenario of scenarios) {
       console.log(`▶ ${scenario.name}  (${scenario.duration}ms @ ${scenario.fps}fps)`);

@@ -107,22 +107,54 @@ async function runScenarioInner(
     .captureStream(fps);
   const mimeType = pickMimeType();
   const chunks: Blob[] = [];
-  const recorder = new MediaRecorder(stream, { mimeType });
+  // ~4 Mbps gives near-lossless quality at our 640x360 / ~15-30fps target.
+  // VP9 will not exceed what the content needs, so this is an upper bound,
+  // not a fixed rate — quiet/static frames still compress aggressively.
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
 
   const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
   recorder.start();
 
-  const events = [...scenario.events].sort((a, b) => a.t - b.t);
+  // Scenario keyframes are typically sparse (e.g. one every 100ms). Real human
+  // pointermove input fires at 60-120Hz, so the drag handler in main.ts gets
+  // smooth progress. Replaying sparse keyframes verbatim makes the turn jump in
+  // chunky 100ms steps. Densify by linearly interpolating extra pointermove
+  // events between consecutive keyframes, at INTERP_STEP_MS resolution.
+  const INTERP_STEP_MS = 8; // ~120Hz, matches a high-rate trackpad/mouse
+  const keyframes = [...scenario.events].sort((a, b) => a.t - b.t);
+  const dense: PointerEventStep[] = [];
+  for (let k = 0; k < keyframes.length; k++) {
+    const cur = keyframes[k];
+    dense.push(cur);
+    const next = keyframes[k + 1];
+    // Only interpolate between two consecutive moves (or a down→move pair).
+    // Don't fabricate moves across pointerup/down boundaries.
+    if (
+      !next ||
+      next.type === 'pointerdown' ||
+      cur.type === 'pointerup'
+    ) continue;
+    const span = next.t - cur.t;
+    if (span <= INTERP_STEP_MS) continue;
+    const steps = Math.floor(span / INTERP_STEP_MS);
+    for (let s = 1; s < steps; s++) {
+      const u = s / steps;
+      dense.push({
+        t: cur.t + s * (span / steps),
+        type: 'pointermove',
+        x: cur.x + (next.x - cur.x) * u,
+        y: cur.y + (next.y - cur.y) * u,
+      });
+    }
+  }
+
   const t0 = performance.now();
-  let i = 0;
-  while (i < events.length) {
-    const ev = events[i];
+  for (const ev of dense) {
     const elapsed = performance.now() - t0;
     const wait = ev.t - elapsed;
     if (wait > 0) await sleep(wait);
     dispatchPointer(canvas, ev);
-    i++;
   }
   const remaining = scenario.duration - (performance.now() - t0);
   if (remaining > 0) await sleep(remaining);

@@ -1,0 +1,20 @@
+{
+  "name": "reverse-turn",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 5000,
+  "fps": 24,
+  "_notes": "Forward turn (right->left), pause for settle, then reverse turn (left->right). Verifies state machine handles directional reversal between two complete operations.",
+  "events": [
+    { "t":  300, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t":  500, "type": "pointermove", "x": 0.60, "y": 0.55 },
+    { "t":  800, "type": "pointermove", "x": 0.46, "y": 0.55 },
+    { "t": 1100, "type": "pointermove", "x": 0.34, "y": 0.55 },
+    { "t": 1200, "type": "pointerup",   "x": 0.32, "y": 0.55 },
+
+    { "t": 2200, "type": "pointerdown", "x": 0.32, "y": 0.55 },
+    { "t": 2400, "type": "pointermove", "x": 0.40, "y": 0.55 },
+    { "t": 2700, "type": "pointermove", "x": 0.54, "y": 0.55 },
+    { "t": 3000, "type": "pointermove", "x": 0.66, "y": 0.55 },
+    { "t": 3100, "type": "pointerup",   "x": 0.68, "y": 0.55 }
+  ]
+}

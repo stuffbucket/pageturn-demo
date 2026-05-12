@@ -12,7 +12,6 @@ services:
       context: ..
       dockerfile: harness/Dockerfile
     image: pageturn-harness:latest
-    container_name: pageturn-harness
     volumes:
       # Captured videos land on the host so they can be inspected/shared.
       - ./output:/work/harness/output

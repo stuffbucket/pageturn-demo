@@ -122,7 +122,15 @@ class PageTurnDemo {
     this.camera.position.set(0, 0.6, 2.6);
     this.camera.lookAt(0, 0, 0);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      // Required for canvas.toDataURL() screenshot capture (see src/long-press-capture.ts).
+      // Otherwise WebGL clears the back buffer after each frame swap and toDataURL
+      // returns a blank transparent image. Small perf cost (~1-5%) accepted for a
+      // debug feature gated by ?capture=1.
+      preserveDrawingBuffer: true,
+    });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;

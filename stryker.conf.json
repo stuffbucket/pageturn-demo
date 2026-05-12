@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing config. Report lands in reports/mutation/mutation.html — open in a browser to inspect surviving mutants. Run with `npm run test:mutation`. Book.ts is excluded from mutation because 8 popup-related tests in Book.test.ts fail at baseline (issue #20); PageMaterial.ts is excluded because there is no unit test for it.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts"
+  },
+  "mutate": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "!src/**/TestUtils.ts",
+    "!src/main.ts",
+    "!src/book/Book.ts",
+    "!src/book/PageMaterial.ts",
+    "!src/textures/atlas.ts",
+    "!src/debug.ts",
+    "!src/telemetry.ts",
+    "!src/long-press-capture.ts",
+    "!src/counter.ts",
+    "!src/vitest.setup.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": ["html", "clear-text", "progress"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "disableTypeChecks": false,
+  "timeoutMS": 60000,
+  "concurrency": 4
+}

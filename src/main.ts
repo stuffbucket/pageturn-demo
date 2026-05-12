@@ -10,6 +10,7 @@ import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
 import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
 import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
+import { developableEnabled } from "./book/DevelopableSurface";
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -305,6 +306,23 @@ class PageTurnDemo {
       captureCheckbox.checked = captureEnabled();
       captureCheckbox.addEventListener('change', () => {
         setCaptureRuntimeEnabled(captureCheckbox.checked);
+      });
+    }
+
+    const devSurfaceCheckbox = document.getElementById('toggle-developable') as HTMLInputElement | null;
+    if (devSurfaceCheckbox) {
+      // The developable-surface shader path is selected once at boot and
+      // baked into the page material at spawn time (cf. Phase A of PRD #11).
+      // Runtime toggling between sin2phi and developable is intentionally
+      // not supported in v1 — too risky for the swap. The checkbox just
+      // updates the URL and reloads, mirroring the fiducials toggle.
+      devSurfaceCheckbox.checked = developableEnabled();
+      devSurfaceCheckbox.addEventListener('change', () => {
+        const params = new URLSearchParams(location.search);
+        if (devSurfaceCheckbox.checked) params.set('dev-surface', '1');
+        else params.delete('dev-surface');
+        const qs = params.toString();
+        location.search = qs ? `?${qs}` : '';
       });
     }
   }

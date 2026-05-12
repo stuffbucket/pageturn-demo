@@ -6,10 +6,11 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 // piexifjs is a UMD CommonJS module — load via createRequire so the ESM Vite
-// config can still pull it in. See THIRD-PARTY-LICENSES.md for license.
+// config can still pull it in. We only use `dump()` to build the raw EXIF
+// binary blob; insertion into the PNG `eXIf` chunk is done by hand below
+// (piexifjs's `insert()` is JPEG-only). See THIRD-PARTY-LICENSES.md.
 const piexif = require('piexifjs') as {
   dump: (exif: Record<string, unknown>) => string
-  insert: (exifBytes: string, jpeg: string) => string
   ImageIFD: Record<string, number>
   ExifIFD: Record<string, number>
 }
@@ -55,8 +56,8 @@ function isVec3(v: unknown): v is Vec3 {
 function validatePayload(p: unknown): { ok: true; value: ScreenshotPayload } | { ok: false; error: string } {
   if (!p || typeof p !== 'object') return { ok: false, error: 'payload is not an object' }
   const o = p as Record<string, unknown>
-  if (typeof o.imageDataUrl !== 'string' || !o.imageDataUrl.startsWith('data:image/jpeg;base64,'))
-    return { ok: false, error: 'imageDataUrl must be a "data:image/jpeg;base64,..." string' }
+  if (typeof o.imageDataUrl !== 'string' || !o.imageDataUrl.startsWith('data:image/png;base64,'))
+    return { ok: false, error: 'imageDataUrl must be a "data:image/png;base64,..." string' }
   if (typeof o.clientTimestamp !== 'string') return { ok: false, error: 'clientTimestamp must be string' }
   if (typeof o.url !== 'string') return { ok: false, error: 'url must be string' }
   if (!(o.sessionId === null || typeof o.sessionId === 'string'))
@@ -144,6 +145,106 @@ function exifDateTime(d: Date): string {
     + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
 }
 
+// ---------------------------------------------------------------------------
+// PNG eXIf chunk injection
+//
+// PNG layout: 8-byte signature, then a sequence of chunks. Each chunk is
+//   length(4 BE) || type(4 ASCII) || data(length bytes) || crc(4 BE)
+// where CRC-32 covers (type || data).
+//
+// Per W3C PNG 3rd Edition (https://www.w3.org/TR/png-3/#11eXIf), the `eXIf`
+// chunk carries a TIFF/EXIF byte stream identical to the EXIF segment of a
+// JPEG (sans the JPEG-only "Exif\0\0" marker prefix). Position: anywhere
+// between IHDR and IEND. We slot it immediately after IHDR for easy
+// inspection by tools that walk chunks linearly.
+// ---------------------------------------------------------------------------
+
+// Lazily-built CRC-32 table (PNG / IEEE 802.3 polynomial 0xEDB88320).
+let crcTable: Uint32Array | null = null
+function getCrcTable(): Uint32Array {
+  if (crcTable) return crcTable
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1)
+    t[n] = c >>> 0
+  }
+  crcTable = t
+  return t
+}
+
+function crc32(buf: Buffer): number {
+  const t = getCrcTable()
+  let c = 0xffffffff
+  for (let i = 0; i < buf.length; i++) c = t[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+function makeChunk(type: string, data: Buffer): Buffer {
+  if (type.length !== 4) throw new Error(`chunk type must be 4 ASCII bytes, got "${type}"`)
+  const length = Buffer.alloc(4); length.writeUInt32BE(data.length, 0)
+  const typeBuf = Buffer.from(type, 'ascii')
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0)
+  return Buffer.concat([length, typeBuf, data, crc])
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+/**
+ * Inject (or replace) an `eXIf` chunk in `pngBuf`, slotting it immediately
+ * after IHDR. Strips any pre-existing `eXIf` chunk first so callers can
+ * re-encode safely. Throws on malformed PNG input.
+ */
+function injectExifChunk(pngBuf: Buffer, exifData: Buffer): Buffer {
+  if (pngBuf.length < 8 || !pngBuf.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    throw new Error('not a PNG (signature mismatch)')
+  }
+  const out: Buffer[] = [PNG_SIGNATURE]
+  const exifChunk = makeChunk('eXIf', exifData)
+  let inserted = false
+  let offset = 8
+  while (offset < pngBuf.length) {
+    if (offset + 8 > pngBuf.length) throw new Error('truncated PNG chunk header')
+    const len = pngBuf.readUInt32BE(offset)
+    const type = pngBuf.subarray(offset + 4, offset + 8).toString('ascii')
+    const end = offset + 8 + len + 4 // length + type + data + crc
+    if (end > pngBuf.length) throw new Error(`truncated PNG chunk "${type}"`)
+    const chunkBuf = pngBuf.subarray(offset, end)
+    // Drop any pre-existing eXIf so we don't duplicate.
+    if (type !== 'eXIf') out.push(chunkBuf)
+    if (type === 'IHDR' && !inserted) {
+      out.push(exifChunk)
+      inserted = true
+    }
+    offset = end
+    if (type === 'IEND') break
+  }
+  if (!inserted) throw new Error('PNG missing IHDR; cannot inject eXIf')
+  return Buffer.concat(out)
+}
+
+/**
+ * piexif.dump() returns the EXIF segment as a "binary string" — each char
+ * code is a single byte. Convert to a Buffer.
+ *
+ * For JPEG, piexif.dump() emits a payload that begins with the App1 marker
+ * "Exif\0\0" prefix (so it can be slotted into a JPEG APP1 segment). The
+ * PNG eXIf chunk wants the raw TIFF stream WITHOUT that prefix per W3C
+ * PNG 3rd Edition. Strip it if present.
+ */
+function piexifDumpToTiffBuffer(exifObj: Record<string, unknown>): Buffer {
+  const binStr = piexif.dump(exifObj)
+  const buf = Buffer.from(binStr, 'binary')
+  // Some piexifjs versions emit the bare TIFF stream directly; others
+  // prefix the JPEG App1 marker. Detect and strip the prefix only if
+  // present so we always hand the eXIf chunk a TIFF header.
+  const PREFIX = Buffer.from('Exif\x00\x00', 'binary')
+  if (buf.length >= PREFIX.length && buf.subarray(0, PREFIX.length).equals(PREFIX)) {
+    return buf.subarray(PREFIX.length)
+  }
+  return buf
+}
+
 export default defineConfig({
   server: {
     port: 5173,
@@ -221,10 +322,12 @@ export default defineConfig({
     },
     {
       // screenshot-server — receives POST /__screenshot from a browser-side
-      // long-press capture (sibling to telemetry-sink). Embeds EXIF metadata
-      // in the JPEG (incl. git short SHA in the Model tag so an agent can
-      // rewind to the captured revision) and writes both the JPEG and a
-      // sidecar JSON to contrib/screenshots/.
+      // long-press capture (sibling to telemetry-sink). Writes a PNG plus a
+      // sidecar JSON to contrib/screenshots/. PNG was chosen over JPEG for
+      // lossless debug clarity. Metadata (incl. git short SHA in EXIF Model
+      // and the full StateSnapshot in EXIF UserComment) is embedded in the
+      // PNG via the W3C PNG 3rd Edition `eXIf` chunk; the sidecar JSON is
+      // the canonical machine-readable mirror of the same data.
       name: 'screenshot-server',
       configureServer(server) {
         const gitShort = safeGit('git rev-parse --short HEAD') || 'unknown'
@@ -277,13 +380,16 @@ export default defineConfig({
             }
             const payload = v.value
 
-            // Decode JPEG
-            const base64 = payload.imageDataUrl.slice('data:image/jpeg;base64,'.length)
-            let jpegBuf: Buffer
+            // Decode PNG
+            const base64 = payload.imageDataUrl.slice('data:image/png;base64,'.length)
+            let pngBuf: Buffer
             try {
-              jpegBuf = Buffer.from(base64, 'base64')
-              if (jpegBuf.length < 4 || jpegBuf[0] !== 0xff || jpegBuf[1] !== 0xd8) {
-                throw new Error('not a JPEG (missing SOI marker)')
+              pngBuf = Buffer.from(base64, 'base64')
+              // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+              if (pngBuf.length < 8
+                || pngBuf[0] !== 0x89 || pngBuf[1] !== 0x50
+                || pngBuf[2] !== 0x4e || pngBuf[3] !== 0x47) {
+                throw new Error('not a PNG (missing signature)')
               }
             } catch (err) {
               res.statusCode = 400
@@ -298,22 +404,22 @@ export default defineConfig({
             const safeSession = sessionPart.replace(/[^A-Za-z0-9_-]+/g, '-')
             const tsSlug = isoSlug(serverDate.toISOString())
             const slug = urlSlug(payload.url)
-            const filename = `${safeSession}-${tsSlug}-${slug}.jpg`
+            const filename = `${safeSession}-${tsSlug}-${slug}.png`
             const outPath = path.join(SCREENSHOT_DIR, filename)
             const sidecarPath = `${outPath}.json`
             const relPath = `contrib/screenshots/${filename}`
             const relSidecar = `${relPath}.json`
 
-            // Build EXIF
+            // Build EXIF tags. piexif provides only the dump() helper here;
+            // we use it to produce the raw TIFF/EXIF blob and inject our
+            // own `eXIf` chunk into the PNG.
             const description =
               `j=${payload.state.turn.j},phi=${payload.state.turn.phi},`
               + `dihedral=${payload.state.crease.dihedral},`
               + `sessionId=${payload.sessionId ?? 'null'}`
-
             const userCommentJson = JSON.stringify(payload.state)
             // EXIF UserComment requires an 8-byte character-code prefix.
             const userComment = 'ASCII\x00\x00\x00' + userCommentJson
-
             const exifObj: Record<string, unknown> = {
               '0th': {
                 [piexif.ImageIFD.Make]: 'pageturn-demo',
@@ -330,27 +436,25 @@ export default defineConfig({
 
             let outBuf: Buffer
             try {
-              const exifBytes = piexif.dump(exifObj)
-              const jpegBinary = jpegBuf.toString('binary')
-              const newBinary = piexif.insert(exifBytes, jpegBinary)
-              outBuf = Buffer.from(newBinary, 'binary')
+              const exifData = piexifDumpToTiffBuffer(exifObj)
+              outBuf = injectExifChunk(pngBuf, exifData)
             } catch (err) {
               server.config.logger.warn(
-                `[screenshot-server] EXIF embed failed (${(err as Error).message}); writing raw JPEG`,
+                `[screenshot-server] eXIf inject failed (${(err as Error).message}); writing raw PNG`,
               )
-              outBuf = jpegBuf
+              outBuf = pngBuf
             }
 
             const sidecar = {
               ...payload,
               // Drop the giant base64 from the sidecar; it's already on disk
-              // as <filename>.jpg. Keep a pointer back to the image instead.
+              // as <filename>.png. Keep a pointer back to the image instead.
               imageDataUrl: undefined,
               imageFile: relPath,
               server: {
                 receivedAt: serverDate.toISOString(),
-                git_commit: gitShort,
-                git_commit_full: gitFull,
+                git_commit: gitFull,
+                git_commit_short: gitShort,
                 git_branch: gitBranch,
                 git_dirty: safeGit('git status --porcelain').length > 0,
               },

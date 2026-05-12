@@ -6,15 +6,17 @@
  * for >= HOLD_THRESHOLD_MS without moving more than MOVE_TOLERANCE_PX, this
  * module:
  *
- *   1. Grabs the WebGL canvas as a JPEG data URL.
+ *   1. Grabs the WebGL canvas as a PNG data URL.
  *   2. POSTs a structured payload (image + telemetry snapshot) to the
  *      sibling Vite plugin endpoint at `/__screenshot`.
  *   3. Flashes the screen white briefly to confirm capture.
  *   4. Emits a `screenshot-captured` telemetry event so log readers can
  *      correlate the screenshot with the surrounding event stream.
  *
- * Gating: this module is only active when the page was loaded with the
- * `?capture=1` URL flag.  `installLongPressCapture` is a no-op otherwise.
+ * Gating: handlers are always installed, but each one early-returns unless
+ * a runtime flag is enabled.  Initial value comes from the `?capture=1` URL
+ * flag; `setCaptureRuntimeEnabled` lets the help-menu checkbox toggle it
+ * on/off without a reload.
  *
  * Session: agents that boot the prototype with `?session=<slug>` (e.g.
  * `?session=spine-tear-investigation-2026-05-12`) get that slug echoed
@@ -64,6 +66,7 @@ export interface StateSnapshot {
 }
 
 interface ScreenshotPayload {
+  /** PNG data URL: `data:image/png;base64,...` */
   imageDataUrl: string;
   clientTimestamp: string;
   url: string;
@@ -86,6 +89,20 @@ export function captureEnabled(): boolean {
   } catch {
     return false;
   }
+}
+
+// ── Runtime toggle ──────────────────────────────────────────────────────────
+// Installed handlers always exist (so toggling on/off doesn't require a
+// reload), but each one consults this flag before doing any work. The
+// help-menu checkbox flips it; the initial value is seeded from `?capture=1`.
+let captureRuntimeEnabled = false;
+
+export function setCaptureRuntimeEnabled(enabled: boolean): void {
+  captureRuntimeEnabled = enabled;
+}
+
+export function isCaptureRuntimeEnabled(): boolean {
+  return captureRuntimeEnabled;
 }
 
 function readSessionId(): string | null {
@@ -117,8 +134,9 @@ function fireFlash(el: HTMLDivElement): void {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 /**
- * Install long-press screenshot capture on `canvas`.  No-op unless
- * `?capture=1` is set in the page URL.
+ * Install long-press screenshot capture on `canvas`.  Handlers are always
+ * installed; the runtime flag (seeded from `?capture=1`, toggleable via
+ * `setCaptureRuntimeEnabled`) gates whether they actually capture.
  *
  * @param canvas              The WebGL canvas to capture on long-press.
  * @param getStateSnapshot    Closure that returns a fresh StateSnapshot at
@@ -129,8 +147,11 @@ export function installLongPressCapture(
   canvas: HTMLCanvasElement,
   getStateSnapshot: () => StateSnapshot,
 ): void {
-  if (!captureEnabled()) return;
   if (typeof window === 'undefined') return;
+
+  // Seed runtime flag from the URL param so behavior matches the pre-toggle
+  // contract on first paint. The help-menu checkbox can flip it later.
+  captureRuntimeEnabled = captureEnabled();
 
   const flashEl = ensureFlashOverlay();
   const sessionId = readSessionId();
@@ -160,6 +181,8 @@ export function installLongPressCapture(
 
   const fireCapture = async (): Promise<void> => {
     if (captureFiredThisPress) return;
+    // If the user toggled capture off after press start, abort silently.
+    if (!captureRuntimeEnabled) { timerId = null; return; }
     captureFiredThisPress = true;
     timerId = null;
 
@@ -168,7 +191,7 @@ export function installLongPressCapture(
 
     let imageDataUrl: string;
     try {
-      imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      imageDataUrl = canvas.toDataURL('image/png');
     } catch (err) {
       // Tainted canvas, OOM, etc. — log and bail without breaking the page.
       // eslint-disable-next-line no-console
@@ -220,6 +243,7 @@ export function installLongPressCapture(
   // bubble phase we'd never see pointerdown during a drag, and the hold
   // timer would never start.  See main.ts install ordering note.
   canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (!captureRuntimeEnabled) return;
     if (e.button !== 0) return;
     // Start fresh — if a previous press was somehow still tracked, drop it.
     resetPress();

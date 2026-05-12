@@ -9,7 +9,7 @@ import { Book } from './book/Book';
 import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
 import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
-import { installLongPressCapture, type StateSnapshot } from "./long-press-capture";
+import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -192,8 +192,9 @@ class PageTurnDemo {
     this.videoCreditEl.textContent = 'myshli.com/project/freight-rail';
     canvas.appendChild(this.videoCreditEl);
 
-    // Long-press screenshot capture — gated on `?capture=1`; module is a
-    // no-op otherwise.  See src/long-press-capture.ts for the protocol.
+    // Long-press screenshot capture — handlers always installed, but each
+    // one consults a runtime flag (initial value seeded from `?capture=1`,
+    // toggleable via the help-menu checkbox in setupDebugUI).
     //
     // ORDERING REQUIREMENT: install BEFORE setupEventHandlers().  Both this
     // module and setupEventHandlers() register pointer listeners in the
@@ -294,6 +295,16 @@ class PageTurnDemo {
         else params.delete('fiducials');
         const qs = params.toString();
         location.search = qs ? `?${qs}` : '';
+      });
+    }
+
+    const captureCheckbox = document.getElementById('toggle-capture') as HTMLInputElement | null;
+    if (captureCheckbox) {
+      // installLongPressCapture seeds the runtime flag from ?capture=1 on
+      // boot; mirror that here so the checkbox UI agrees with handler state.
+      captureCheckbox.checked = captureEnabled();
+      captureCheckbox.addEventListener('change', () => {
+        setCaptureRuntimeEnabled(captureCheckbox.checked);
       });
     }
   }

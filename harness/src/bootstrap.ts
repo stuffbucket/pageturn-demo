@@ -9,13 +9,88 @@
 // than virtual time. For frame-perfect deterministic capture, swap in CCapture
 // later — the API surface here doesn't need to change.
 
+// ── Telemetry interceptor (installed before app boots) ────────────────────
+// We intercept the two transports `src/telemetry.ts` uses (sendBeacon and
+// fetch) and append parsed events to a shared in-page buffer. The runner
+// later drains this via window.__harness.drainTelemetry().
+//
+// Order matters: this block runs at the top of the bootstrap module BEFORE
+// `import '../../src/main.ts'` so it patches navigator/fetch before
+// telemetry.ts ever calls them. Telemetry itself only fires lazily (on
+// pointer/error events) so any timing window is wide-open in practice,
+// but doing it pre-import is the safe default.
+interface CapturedTelemetryEventLocal {
+  tScenarioMs: number;
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+declare global {
+  interface Window {
+    __capturedTelemetry?: CapturedTelemetryEventLocal[];
+    __scenarioStartT?: number;
+    __pendingTelemetry?: Promise<void>[];
+  }
+}
+
+window.__capturedTelemetry = [];
+window.__pendingTelemetry = [];
+
+function recordTelemetry(body: string | undefined): void {
+  if (!body) return;
+  let parsed: { type?: string; [k: string]: unknown };
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return;
+  }
+  if (typeof parsed.type !== 'string') return;
+  const t0 = window.__scenarioStartT ?? performance.now();
+  const tScenarioMs = performance.now() - t0;
+  const { type, ...payload } = parsed;
+  window.__capturedTelemetry!.push({ tScenarioMs, type, payload });
+}
+
+// Patch sendBeacon for /__telemetry. Forward to original after recording so
+// the dev-server's telemetry sink still gets the event (useful for live
+// tail debugging during harness runs). Blob.text() is async, so we track
+// the in-flight read and let the plain-mode runner await it before draining.
+if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+  const origSendBeacon = navigator.sendBeacon.bind(navigator);
+  navigator.sendBeacon = (url: string | URL, data?: BodyInit | null): boolean => {
+    const u = typeof url === 'string' ? url : url.toString();
+    if (u.includes('/__telemetry') && data instanceof Blob) {
+      const p = data.text().then((s) => recordTelemetry(s));
+      window.__pendingTelemetry!.push(p);
+    }
+    return origSendBeacon(url, data);
+  };
+}
+
+// Patch fetch fallback for /__telemetry.
+if (typeof fetch === 'function') {
+  const origFetch = fetch.bind(globalThis);
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    try {
+      const u = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (u.includes('/__telemetry') && typeof init?.body === 'string') {
+        recordTelemetry(init.body);
+      }
+    } catch { /* never throw from interceptor */ }
+    return origFetch(input as RequestInfo, init);
+  };
+}
+
 import '../../src/main.ts';
 import type {
   Scenario,
   RunOptions,
   HarnessAPI,
   PointerEventStep,
+  ScenarioStep,
   TrajectoryResult,
+  PlainResult,
+  CapturedTelemetryEvent,
 } from './ccapture';
 import { FIDUCIAL_US, FIDUCIAL_VS } from '../../src/textures/atlas';
 import type { Book } from '../../src/book/Book';
@@ -66,6 +141,22 @@ function dispatchPointer(canvas: HTMLCanvasElement, ev: PointerEventStep): void 
     buttons: ev.type === 'pointerup' ? 0 : 1,
   };
   canvas.dispatchEvent(new PointerEvent(ev.type, init));
+}
+
+function dispatchRaw(canvas: HTMLCanvasElement, eventName: string): void {
+  // Synthesize a generic Event. main.ts's lostpointercapture / pointercancel
+  // listeners do not read any event properties, so a bare Event suffices.
+  // If we ever need a real PointerEvent payload (e.g. coordinates),
+  // upgrade this to `new PointerEvent(eventName, {...})`.
+  canvas.dispatchEvent(new Event(eventName, { bubbles: true, cancelable: true, composed: true }));
+}
+
+function dispatchStep(canvas: HTMLCanvasElement, step: ScenarioStep): void {
+  if (step.type === 'raw-event') {
+    dispatchRaw(canvas, step.event);
+  } else {
+    dispatchPointer(canvas, step);
+  }
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -136,20 +227,20 @@ async function runScenarioInner(
   // pointermove input fires at 60-120Hz, so the drag handler in main.ts gets
   // smooth progress. Replaying sparse keyframes verbatim makes the turn jump in
   // chunky 100ms steps. Densify by linearly interpolating extra pointermove
-  // events between consecutive keyframes, at INTERP_STEP_MS resolution.
+  // events between consecutive pointer keyframes, at INTERP_STEP_MS resolution.
+  // raw-event steps pass through unchanged and never get interpolation.
   const INTERP_STEP_MS = 8; // ~120Hz, matches a high-rate trackpad/mouse
   const keyframes = [...scenario.events].sort((a, b) => a.t - b.t);
-  const dense: PointerEventStep[] = [];
+  const dense: ScenarioStep[] = [];
   for (let k = 0; k < keyframes.length; k++) {
     const cur = keyframes[k];
     dense.push(cur);
+    if (cur.type === 'raw-event' || cur.type === 'pointerup') continue;
     const next = keyframes[k + 1];
-    // Only interpolate between two consecutive moves (or a down→move pair).
-    // Don't fabricate moves across pointerup/down boundaries.
     if (
       !next ||
-      next.type === 'pointerdown' ||
-      cur.type === 'pointerup'
+      next.type === 'raw-event' ||
+      next.type === 'pointerdown'
     ) continue;
     const span = next.t - cur.t;
     if (span <= INTERP_STEP_MS) continue;
@@ -166,11 +257,12 @@ async function runScenarioInner(
   }
 
   const t0 = performance.now();
+  window.__scenarioStartT = t0;
   for (const ev of dense) {
     const elapsed = performance.now() - t0;
     const wait = ev.t - elapsed;
     if (wait > 0) await sleep(wait);
-    dispatchPointer(canvas, ev);
+    dispatchStep(canvas, ev);
   }
   const remaining = scenario.duration - (performance.now() - t0);
   if (remaining > 0) await sleep(remaining);
@@ -241,15 +333,16 @@ async function runScenarioTrajectoriesInner(
 
   console.log(`[harness:trajectories] "${scenario.name}" fps=${fps} duration=${scenario.duration}ms`);
 
-  // Densify keyframes the same way runScenarioInner does.
+  // Densify keyframes the same way runScenarioInner does (raw events pass through).
   const INTERP_STEP_MS = 8;
   const keyframes = [...scenario.events].sort((a, b) => a.t - b.t);
-  const dense: PointerEventStep[] = [];
+  const dense: ScenarioStep[] = [];
   for (let k = 0; k < keyframes.length; k++) {
     const cur = keyframes[k];
     dense.push(cur);
+    if (cur.type === 'raw-event' || cur.type === 'pointerup') continue;
     const next = keyframes[k + 1];
-    if (!next || next.type === 'pointerdown' || cur.type === 'pointerup') continue;
+    if (!next || next.type === 'raw-event' || next.type === 'pointerdown') continue;
     const span = next.t - cur.t;
     if (span <= INTERP_STEP_MS) continue;
     const steps = Math.floor(span / INTERP_STEP_MS);
@@ -289,6 +382,7 @@ async function runScenarioTrajectoriesInner(
   }
 
   const t0 = performance.now();
+  window.__scenarioStartT = t0;
   let nextSample = 0;
   let evIdx = 0;
   // Drive the loop frame-by-frame: dispatch any events whose t has elapsed,
@@ -296,7 +390,7 @@ async function runScenarioTrajectoriesInner(
   while (true) {
     const elapsed = performance.now() - t0;
     while (evIdx < dense.length && dense[evIdx].t <= elapsed) {
-      dispatchPointer(canvas, dense[evIdx]);
+      dispatchStep(canvas, dense[evIdx]);
       evIdx++;
     }
     if (elapsed >= nextSample) {
@@ -331,10 +425,86 @@ async function runScenarioTrajectories(
   );
 }
 
+/**
+ * Replay a scenario with no video capture and no trajectory sampling.
+ * Lighter than runScenario; appropriate for assertion-driven scenarios
+ * that only need telemetry events and pointer dispatch. The runner
+ * pairs this with Playwright `page.screenshot()` for pixel checks.
+ */
+async function runScenarioPlain(scenario: Scenario): Promise<PlainResult> {
+  const canvas = getCanvas();
+  console.log(`[harness:plain] starting "${scenario.name}" duration=${scenario.duration}ms events=${scenario.events.length}`);
+
+  // Reset captured telemetry so this run's events are isolated.
+  window.__capturedTelemetry = [];
+
+  const INTERP_STEP_MS = 8;
+  const keyframes = [...scenario.events].sort((a, b) => a.t - b.t);
+  const dense: ScenarioStep[] = [];
+  for (let k = 0; k < keyframes.length; k++) {
+    const cur = keyframes[k];
+    dense.push(cur);
+    if (cur.type === 'raw-event' || cur.type === 'pointerup') continue;
+    const next = keyframes[k + 1];
+    if (!next || next.type === 'raw-event' || next.type === 'pointerdown') continue;
+    const span = next.t - cur.t;
+    if (span <= INTERP_STEP_MS) continue;
+    const steps = Math.floor(span / INTERP_STEP_MS);
+    for (let s = 1; s < steps; s++) {
+      const u = s / steps;
+      dense.push({
+        t: cur.t + s * (span / steps),
+        type: 'pointermove',
+        x: cur.x + (next.x - cur.x) * u,
+        y: cur.y + (next.y - cur.y) * u,
+      });
+    }
+  }
+
+  const t0 = performance.now();
+  window.__scenarioStartT = t0;
+  for (const ev of dense) {
+    const elapsed = performance.now() - t0;
+    const wait = ev.t - elapsed;
+    if (wait > 0) await sleep(wait);
+    dispatchStep(canvas, ev);
+  }
+  const remaining = scenario.duration - (performance.now() - t0);
+  if (remaining > 0) await sleep(remaining);
+
+  const durationMs = performance.now() - t0;
+  // Drain pending Blob.text() reads from sendBeacon-intercepted telemetry
+  // so the snapshot below is complete.
+  if (window.__pendingTelemetry && window.__pendingTelemetry.length > 0) {
+    await Promise.allSettled(window.__pendingTelemetry);
+    window.__pendingTelemetry = [];
+  }
+  const telemetry: CapturedTelemetryEvent[] = (window.__capturedTelemetry ?? []).slice();
+  console.log(`[harness:plain] "${scenario.name}" finished, ${telemetry.length} telemetry events captured`);
+  return { scenario: scenario.name, durationMs, telemetry };
+}
+
+/** Wait until scenario time `tMs` has elapsed (relative to __scenarioStartT). */
+async function waitUntilT(tMs: number): Promise<void> {
+  const start = window.__scenarioStartT ?? performance.now();
+  while (performance.now() - start < tMs) {
+    await sleep(Math.min(16, tMs - (performance.now() - start)));
+  }
+}
+
+function drainTelemetry(): CapturedTelemetryEvent[] {
+  const out = (window.__capturedTelemetry ?? []).slice();
+  window.__capturedTelemetry = [];
+  return out;
+}
+
 const api: HarnessAPI = {
   ready: waitForReady(),
   runScenario,
   runScenarioTrajectories,
+  runScenarioPlain,
+  drainTelemetry,
+  waitUntilT,
 };
 
 window.__harness = api;

@@ -1,0 +1,26 @@
+{
+  "name": "bleed-through-mid-fold",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 1500,
+  "fps": 30,
+  "_notes": "Pull the right-page corner to the spine and HOLD (no pointerup), parking the turning page near dihedral π/2 over a content-vs-content spread (j≈5 → BBB/credits). Under the polygon-offset bug fixed in PR #12, the turning page's pixels were intermittently behind the static spread along its overlap region, producing high-frequency stripes. This scenario screenshots the mid-fold and asserts the mean per-pixel luma delta in a sample patch on the turning page is below a threshold consistent with smooth shading. The threshold is conservative; tightening it requires baseline images from a known-good build.",
+  "events": [
+    { "t": 100,  "type": "pointerdown", "x": 0.92, "y": 0.50 },
+    { "t": 250,  "type": "pointermove", "x": 0.78, "y": 0.50 },
+    { "t": 400,  "type": "pointermove", "x": 0.62, "y": 0.50 },
+    { "t": 550,  "type": "pointermove", "x": 0.50, "y": 0.50 },
+    { "t": 700,  "type": "pointermove", "x": 0.46, "y": 0.50 },
+    { "t": 900,  "type": "pointermove", "x": 0.46, "y": 0.50 },
+    { "t": 1100, "type": "pointermove", "x": 0.46, "y": 0.50 },
+    { "t": 1300, "type": "pointermove", "x": 0.46, "y": 0.50 }
+  ],
+  "assertions": [
+    {
+      "type": "pixel-max-variance",
+      "atT": 1100,
+      "region": { "x": 0.30, "y": 0.40, "w": 0.10, "h": 0.20 },
+      "maxMeanAdjacentDelta": 28,
+      "description": "Sample patch on the turning page should not contain z-fighting stripes from the spread underneath. Mean adjacent-pixel luma delta below ~28 is consistent with smooth page rendering; the bug produced visibly higher noise."
+    }
+  ]
+}

@@ -18,12 +18,123 @@ export interface PointerEventStep {
   y: number;
 }
 
+/**
+ * Dispatch a synthesized non-pointer event on the canvas at scenario time `t`.
+ * Used to simulate browser-initiated events that no real user gesture
+ * sequence can produce (e.g. `lostpointercapture` when the cursor is
+ * dragged out of the OS window).
+ */
+export interface RawEventStep {
+  t: number;
+  type: 'raw-event';
+  /** DOM event name to dispatch, e.g. 'lostpointercapture' or 'pointercancel'. */
+  event: string;
+}
+
+export type ScenarioStep = PointerEventStep | RawEventStep;
+
+export type Assertion =
+  | TelemetryAssertion
+  | FileExistsAssertion
+  | PixelLumaAssertion
+  | PixelVarianceAssertion
+  | TrajectoryAssertion;
+
+/**
+ * Match the first telemetry event whose `type` equals `event`. Optionally
+ * require all keys in `where` to deep-equal the event payload. If
+ * `afterEventAtT` is set, only events emitted >= that scenario time are
+ * considered. If `withinMsAfterT` is set, the matched event must occur
+ * within that many ms of `afterEventAtT`.
+ */
+export interface TelemetryAssertion {
+  type: 'telemetry-event';
+  event: string;
+  where?: Record<string, unknown>;
+  afterEventAtT?: number;
+  withinMsAfterT?: number;
+  /** Optional human description for failure reporting. */
+  description?: string;
+}
+
+/**
+ * Assert that at least one file matching `glob` (anchored at repo root)
+ * exists on disk. Accepts a list of acceptable extensions to make the
+ * scenario robust to format changes (e.g. .jpg → .png).
+ */
+export interface FileExistsAssertion {
+  type: 'file-exists-glob';
+  /** Path glob relative to repo root, e.g. 'contrib/screenshots/harness-*'. */
+  glob: string;
+  /** Acceptable extensions, e.g. ['.png', '.jpg']. Empty = any. */
+  extensions?: string[];
+  /** If set, also check that at least one matching file's sidecar
+   * (<file>.json) contains JSON whose `sessionId` equals this value. */
+  sidecarSessionId?: string;
+  description?: string;
+}
+
+/**
+ * Take a Playwright screenshot at scenario time `atT`, then assert that the
+ * mean luma of a rectangular region (in canvas-fraction coordinates, like
+ * pointer events) is at least `minMeanLuma`. Used to verify that a region
+ * which should contain page pixels is actually showing them.
+ */
+export interface PixelLumaAssertion {
+  type: 'pixel-min-luma';
+  atT: number;
+  region: { x: number; y: number; w: number; h: number };
+  minMeanLuma: number; // 0..255
+  description?: string;
+}
+
+/**
+ * Take a Playwright screenshot at scenario time `atT`, then compute the
+ * mean absolute pixel-to-pixel delta across adjacent pixels within the
+ * region. Z-fighting / bleed-through tends to produce high-variance
+ * stripes; clean rendering produces low variance. Assert variance below
+ * `maxMeanAdjacentDelta` (typical clean: <12 in 0..255 luma units).
+ */
+export interface PixelVarianceAssertion {
+  type: 'pixel-max-variance';
+  atT: number;
+  region: { x: number; y: number; w: number; h: number };
+  maxMeanAdjacentDelta: number;
+  description?: string;
+}
+
+/**
+ * Run the scenario in trajectory mode and assert that the recorded
+ * fiducial position satisfies a constraint. `fiducial` is a key from the
+ * `fiducials` map (e.g. `P_0_3` is i=0, j=3). `axis` is which world-space
+ * coordinate to check. The constraint runs over the entire trajectory
+ * unless `atTApprox` is set, in which case the closest sample is used.
+ */
+export interface TrajectoryAssertion {
+  type: 'trajectory';
+  fiducial: string;
+  axis: 'x' | 'y' | 'z';
+  /** Required: bound type. */
+  op: 'abs-max' | 'abs-min' | 'min' | 'max';
+  /** Threshold compared against the chosen op result. */
+  value: number;
+  /** Optional: only consider the sample closest to this scenario time (ms). */
+  atTApprox?: number;
+  description?: string;
+}
+
 export interface Scenario {
   name: string;
   viewport: { width: number; height: number };
   duration: number;
   fps: number;
-  events: PointerEventStep[];
+  events: ScenarioStep[];
+  /** Optional URL override (default: $HARNESS_URL). Useful for ?capture=1 etc. */
+  url?: string;
+  /** Optional regression assertions evaluated by the runner after replay. */
+  assertions?: Assertion[];
+  /** If set, run trajectory mode in addition to recording telemetry. */
+  trajectories?: boolean;
 }
 
 export interface RunOptions {
@@ -58,6 +169,31 @@ export interface HarnessAPI {
    * positions of all 5x7 fiducial markers on the turning page.
    */
   runScenarioTrajectories: (scenario: Scenario, opts?: RunOptions) => Promise<TrajectoryResult>;
+  /**
+   * Replay a scenario without video capture. Returns the elapsed event
+   * timeline and any telemetry events captured by the bootstrap-installed
+   * interceptors. Used by assertion-only scenarios.
+   */
+  runScenarioPlain?: (scenario: Scenario) => Promise<PlainResult>;
+  /** Drain captured telemetry without running a scenario. */
+  drainTelemetry?: () => CapturedTelemetryEvent[];
+  /** Pause until scenario time `atT` ms; resolves when reached. Used by
+   * the runner to coordinate Playwright screenshots with scenario time. */
+  waitUntilT?: (tMs: number) => Promise<void>;
+}
+
+export interface CapturedTelemetryEvent {
+  /** Scenario-relative time in ms (0 = start of replay). */
+  tScenarioMs: number;
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+export interface PlainResult {
+  scenario: string;
+  durationMs: number;
+  telemetry: CapturedTelemetryEvent[];
+  trajectories?: TrajectoryResult;
 }
 
 export {};

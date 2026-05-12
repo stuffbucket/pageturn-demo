@@ -9,8 +9,9 @@
  */
 
 import * as THREE from 'three';
-import { BookState } from './BookState';
-import { generateBookTextures } from '../textures/atlas';
+import { BookState, DEFAULT_BOOK_MATERIAL, maxFanCount } from './BookState';
+import type { BookMaterial } from './BookState';
+import { generateBookTextures, TexturePool } from '../textures/atlas';
 
 export interface BookParams {
   numLeaves: number;
@@ -18,6 +19,7 @@ export interface BookParams {
   pageHeight?: number;
   curlRadius?: number;   // kept for API compat, unused in flat-flip mode
   textureSize?: number;
+  material?: BookMaterial;
 }
 
 // Vertex shader: per-vertex Y-rotation with gravity-based free-edge lag.
@@ -88,10 +90,11 @@ const CREASE_FRAG = /* glsl */`
 export class Book {
   private state: BookState;
   private group: THREE.Group;
-  private textures: Map<string, THREE.Texture>;
+  private textures: TexturePool;
   private pageWidth: number;
   private pageHeight: number;
   private numLeaves: number;
+  private material: BookMaterial;
 
   // Two meshes that always show the current resting spread.
   private leftMesh: THREE.Mesh;
@@ -100,6 +103,10 @@ export class Book {
   // Turning page mesh — exists only during an animation.
   private turningPageMesh: THREE.Mesh | null = null;
   private isReverseTurn = false;
+
+  // Fan turn: multiple pages turning simultaneously with stagger.
+  private fanPages: Array<{ mesh: THREE.Mesh; delay: number }> = [];
+  private fanReverse = false;
 
   // Spine crease shadow — fades in/out with page turns.
   private creaseMesh: THREE.Mesh;
@@ -120,6 +127,7 @@ export class Book {
     this.numLeaves = params.numLeaves;
     this.pageWidth  = params.pageWidth  ?? 1.0;
     this.pageHeight = params.pageHeight ?? 1.4;
+    this.material   = params.material   ?? DEFAULT_BOOK_MATERIAL;
 
     this.state    = new BookState(this.numLeaves);
     this.group    = new THREE.Group();
@@ -155,7 +163,8 @@ export class Book {
     this.group.add(this.creaseMesh);
 
     this.syncDisplay();
-    // this.createPopup();  // 3D popup models stubbed out for now
+    // Popup diorama temporarily disabled.
+    // this.createPopup();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -187,6 +196,8 @@ export class Book {
     const { left, right } = this.contentAt(this.state.getStateIndex());
     this.applyToMesh(this.leftMesh,  left);
     this.applyToMesh(this.rightMesh, right);
+    // Evict distant textures to free GPU memory
+    this.textures.retainWindow(this.state.getStateIndex(), this.numLeaves);
     if (this.popupGroup) {
       const atPopup = !this.state.getIsTurning() &&
         this.state.getStateIndex() === this.POPUP_SPREAD;
@@ -210,7 +221,6 @@ export class Book {
    * upright.  Trees and the sun use sub-groups so their elevated parts
    * pivot correctly around their base on the page.
    */
-  // @ts-ignore -- stubbed out, kept for future use
   private createPopup(): void {
     this.popupGroup = new THREE.Group();
 
@@ -444,6 +454,200 @@ export class Book {
     this.syncDisplay();
   }
 
+  // ── Fan turn API ──────────────────────────────────────────────────────────
+
+  /**
+   * Maximum pages a fan gesture can turn from the current position,
+   * computed from impulse propagation through page-to-page friction.
+   */
+  getMaxFanCount(reverse: boolean): number {
+    return maxFanCount(
+      this.state.getStateIndex(),
+      this.numLeaves,
+      !reverse,
+      this.material,
+    );
+  }
+
+  /**
+   * Start a fan turn: multiple pages turning simultaneously with stagger.
+   * Count is clamped to the impulse-derived maximum — the cover’s inertia
+   * naturally prevents the fan from closing the book.
+   */
+  startFanTurn(count: number, reverse: boolean): boolean {
+    const j = this.state.getStateIndex();
+    const STAGGER = 0.12; // delay between successive pages
+    const physicsMax = this.getMaxFanCount(reverse);
+
+    if (reverse) {
+      // Clamp to impulse-derived max (covers are too heavy to fan).
+      const c = Math.min(count, physicsMax);
+      if (c < 1) return false;
+      if (!this.state.startReverseFanTurn(c)) return false;
+
+      this.fanReverse = true;
+
+      // V-fold: detect popup spread crossing
+      const dest_j = j - c;
+      if (j === this.POPUP_SPREAD) {
+        this.popupLeavingSpread = true;
+      }
+      if (dest_j === this.POPUP_SPREAD && this.popupGroup) {
+        this.popupArrivingSpread = true;
+        this.popupGroup.visible = true;
+        this.popupFoldProgress = 0;
+        this.applyPopupFold();
+      }
+
+      // Destination spread under all the turning pages
+      const dest = this.contentAt(dest_j);
+      this.applyToMesh(this.leftMesh,  dest.left);
+      this.applyToMesh(this.rightMesh, dest.right);
+
+      for (let i = 0; i < c; i++) {
+        const srcJ = j - 1 - i;  // each leaf we're peeling back
+        const prv = this.contentAt(srcJ);
+        const cur = this.contentAt(srcJ + 1);
+        const frontTex = this.tex(prv.right);
+        const backTex = this.tex(cur.left);
+        if (!frontTex || !backTex) continue;
+        this.spawnFanPage(frontTex, backTex, -Math.PI, i * STAGGER, i);
+      }
+    } else {
+      // Forward fan — clamp to impulse-derived max.
+      const c = Math.min(count, physicsMax);
+      if (c < 1) return false;
+      if (!this.state.startFanTurn(c)) return false;
+
+      this.fanReverse = false;
+
+      // V-fold: detect popup spread crossing
+      const dest_j = j + c;
+      if (j === this.POPUP_SPREAD) {
+        this.popupLeavingSpread = true;
+      }
+      if (dest_j === this.POPUP_SPREAD && this.popupGroup) {
+        this.popupArrivingSpread = true;
+        this.popupGroup.visible = true;
+        this.popupFoldProgress = 0;
+        this.applyPopupFold();
+      }
+
+      // Destination spread shown underneath
+      const dest = this.contentAt(dest_j);
+      this.applyToMesh(this.leftMesh,  dest.left);
+      this.applyToMesh(this.rightMesh, dest.right);
+
+      for (let i = 0; i < c; i++) {
+        const srcJ = j + i;
+        const cur = this.contentAt(srcJ);
+        const nxt = this.contentAt(srcJ + 1);
+        const frontTex = this.tex(cur.right);
+        const backTex = this.tex(nxt.left);
+        if (!frontTex || !backTex) continue;
+        this.spawnFanPage(frontTex, backTex, 0, i * STAGGER, i);
+      }
+    }
+    return true;
+  }
+
+  /** Spawn one page in a fan, at a given z-depth layer. */
+  private spawnFanPage(
+    frontTex: THREE.Texture,
+    backTex: THREE.Texture,
+    startAngle: number,
+    delay: number,
+    layer: number,
+  ): void {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        frontTexture: { value: frontTex },
+        backTexture:  { value: backTex  },
+        uAngle:       { value: startAngle },
+        uBendAmount:  { value: 0.4 },
+        uPageWidth:   { value: this.pageWidth },
+      },
+      vertexShader:   FLIP_VERT,
+      fragmentShader: FLIP_FRAG,
+      side: THREE.DoubleSide,
+    });
+
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 64, 1);
+    geo.translate(this.pageWidth / 2, 0, 0);
+
+    const mesh = new THREE.Mesh(geo, mat);
+    // Stack pages with slight z offsets so they don't z-fight
+    mesh.position.z = 0.001 + layer * 0.002;
+    this.group.add(mesh);
+    this.fanPages.push({ mesh, delay });
+  }
+
+  /** Update all fan pages with stagger-delayed progress. */
+  updateFanTurn(progress: number): void {
+    this.state.setTurningProgress(progress);
+
+    for (const page of this.fanPages) {
+      const p = Math.max(0, Math.min(1, (progress - page.delay) / (1 - page.delay)));
+      const angle = this.fanReverse
+        ? -Math.PI * (1 - p)
+        : -Math.PI * p;
+      (page.mesh.material as THREE.ShaderMaterial).uniforms.uAngle.value = angle;
+    }
+
+    // Crease shadow: bell curve based on mean page progress
+    const meanP = this.fanPages.length > 0
+      ? this.fanPages.reduce((sum, fp) => {
+          return sum + Math.max(0, Math.min(1, (progress - fp.delay) / (1 - fp.delay)));
+        }, 0) / this.fanPages.length
+      : progress;
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value =
+      Math.sin(Math.PI * meanP);
+
+    // V-fold: drive popup fold in sync with fan progress
+    if (this.popupGroup) {
+      if (this.popupArrivingSpread) {
+        this.popupFoldProgress = progress;
+        this.applyPopupFold();
+      } else if (this.popupLeavingSpread) {
+        this.popupFoldProgress = Math.max(0, 1 - progress);
+        this.applyPopupFold();
+        if (this.popupFoldProgress <= 0.001) {
+          this.popupGroup.visible = false;
+        }
+      }
+    }
+  }
+
+  /** Complete the fan turn — dispose all fan page meshes, advance state. */
+  completeFanTurn(): void {
+    for (const page of this.fanPages) {
+      this.group.remove(page.mesh);
+      page.mesh.geometry.dispose();
+      (page.mesh.material as THREE.Material).dispose();
+    }
+    this.fanPages = [];
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
+    this.popupLeavingSpread = false;
+    this.popupArrivingSpread = false;
+    this.state.completeTurn();
+    this.syncDisplay();
+  }
+
+  /** Cancel an in-progress fan turn and restore the book to its pre-turn state. */
+  cancelFanTurn(): void {
+    for (const page of this.fanPages) {
+      this.group.remove(page.mesh);
+      page.mesh.geometry.dispose();
+      (page.mesh.material as THREE.Material).dispose();
+    }
+    this.fanPages = [];
+    (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
+    this.popupLeavingSpread = false;
+    this.popupArrivingSpread = false;
+    this.state.cancelTurn();
+    this.syncDisplay();
+  }
+
   /** Tick the popup fold animation and update the clip plane. Call every frame. */
   update(_dt: number): void {
     // Update the clipping plane from book-group local space to world space.
@@ -473,4 +677,9 @@ export class Book {
   getGroup(): THREE.Group  { return this.group; }
   getState(): BookState    { return this.state; }
   getStateDescription(): string { return this.state.getStateDescription(); }
+
+  /** Current popup fold angle: 0 = flat, 1 = fully upright. For testing. */
+  getPopupFoldProgress(): number { return this.popupFoldProgress; }
+  /** Whether the popup group exists and is visible. */
+  isPopupVisible(): boolean { return this.popupGroup?.visible ?? false; }
 }

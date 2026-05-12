@@ -1,0 +1,44 @@
+{
+  "name": "horizontal-pull",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 10000,
+  "fps": 24,
+  "_notes": "Demo reel: 3 forward turns followed by 3 reverse turns. Book spans viewport x in roughly [0.24, 0.76]; pointerdown at x>0.5 starts a forward turn (right page), x<0.5 starts a reverse turn (left page). Pauses between turns are long enough for the settle physics in main.ts to converge before the next pointerdown fires.",
+  "events": [
+    { "t":   300, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t":   500, "type": "pointermove", "x": 0.60, "y": 0.55 },
+    { "t":   800, "type": "pointermove", "x": 0.46, "y": 0.55 },
+    { "t":  1100, "type": "pointermove", "x": 0.34, "y": 0.55 },
+    { "t":  1200, "type": "pointerup",   "x": 0.32, "y": 0.55 },
+
+    { "t":  1800, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t":  2000, "type": "pointermove", "x": 0.60, "y": 0.55 },
+    { "t":  2300, "type": "pointermove", "x": 0.46, "y": 0.55 },
+    { "t":  2600, "type": "pointermove", "x": 0.34, "y": 0.55 },
+    { "t":  2700, "type": "pointerup",   "x": 0.32, "y": 0.55 },
+
+    { "t":  3300, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t":  3500, "type": "pointermove", "x": 0.60, "y": 0.55 },
+    { "t":  3800, "type": "pointermove", "x": 0.46, "y": 0.55 },
+    { "t":  4100, "type": "pointermove", "x": 0.34, "y": 0.55 },
+    { "t":  4200, "type": "pointerup",   "x": 0.32, "y": 0.55 },
+
+    { "t":  5000, "type": "pointerdown", "x": 0.32, "y": 0.55 },
+    { "t":  5200, "type": "pointermove", "x": 0.40, "y": 0.55 },
+    { "t":  5500, "type": "pointermove", "x": 0.54, "y": 0.55 },
+    { "t":  5800, "type": "pointermove", "x": 0.66, "y": 0.55 },
+    { "t":  5900, "type": "pointerup",   "x": 0.68, "y": 0.55 },
+
+    { "t":  6500, "type": "pointerdown", "x": 0.32, "y": 0.55 },
+    { "t":  6700, "type": "pointermove", "x": 0.40, "y": 0.55 },
+    { "t":  7000, "type": "pointermove", "x": 0.54, "y": 0.55 },
+    { "t":  7300, "type": "pointermove", "x": 0.66, "y": 0.55 },
+    { "t":  7400, "type": "pointerup",   "x": 0.68, "y": 0.55 },
+
+    { "t":  8000, "type": "pointerdown", "x": 0.32, "y": 0.55 },
+    { "t":  8200, "type": "pointermove", "x": 0.40, "y": 0.55 },
+    { "t":  8500, "type": "pointermove", "x": 0.54, "y": 0.55 },
+    { "t":  8800, "type": "pointermove", "x": 0.66, "y": 0.55 },
+    { "t":  8900, "type": "pointerup",   "x": 0.68, "y": 0.55 }
+  ]
+}

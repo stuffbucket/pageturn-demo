@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Page Turn Harness</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body data-harness="1">
+    <div id="app" role="application" aria-label="Interactive 3D Book (harness mode)">
+      <div id="canvas-container" tabindex="0"></div>
+      <div id="sr-announcer" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+      <!-- Minimal overlay; UI is hidden in harness mode via CSS below. -->
+      <div id="ui-overlay" style="display:none">
+        <div id="info-panel">
+          <p id="state-display"></p>
+          <div id="controls"><button id="prev-btn"></button><button id="next-btn"></button></div>
+          <div id="stats"><span id="fps"></span><span id="current-page"></span></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/harness/src/bootstrap.ts"></script>
+  </body>
+</html>

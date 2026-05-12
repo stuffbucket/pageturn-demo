@@ -1,0 +1,189 @@
+// Page-side bootstrap for the test harness.
+// Loads the demo app, then attaches window.__harness so an external driver
+// (Playwright) can run scenarios and pull back a captured video blob.
+//
+// Capture strategy: MediaRecorder on canvas.captureStream(). This records the
+// canvas's GPU surface in real time without per-frame ReadPixels, so software
+// WebGL (which is what headless Chromium uses without GPU passthrough) doesn't
+// tank performance. Tradeoff: events are dispatched in wall-clock time rather
+// than virtual time. For frame-perfect deterministic capture, swap in CCapture
+// later — the API surface here doesn't need to change.
+
+import '../../src/main.ts';
+import type { Scenario, RunOptions, HarnessAPI, PointerEventStep } from './ccapture';
+
+const READY_DELAY_FRAMES = 4;
+const RUNAWAY_MULTIPLIER = 20; // duration * this = abort deadline
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForReady(): Promise<void> {
+  for (let i = 0; i < READY_DELAY_FRAMES; i++) await nextFrame();
+}
+
+function getCanvas(): HTMLCanvasElement {
+  const c = document.querySelector('#canvas-container canvas') as HTMLCanvasElement | null;
+  if (!c) throw new Error('harness: canvas not found inside #canvas-container');
+  return c;
+}
+
+function dispatchPointer(canvas: HTMLCanvasElement, ev: PointerEventStep): void {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = rect.left + ev.x * rect.width;
+  const clientY = rect.top + ev.y * rect.height;
+  const init: PointerEventInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX,
+    clientY,
+    pointerType: 'mouse',
+    pointerId: 1,
+    isPrimary: true,
+    button: 0,
+    buttons: ev.type === 'pointerup' ? 0 : 1,
+  };
+  canvas.dispatchEvent(new PointerEvent(ev.type, init));
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`harness timeout: ${label} after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+function pickMimeType(): string {
+  const candidates = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for (const m of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(m)) return m;
+  }
+  return 'video/webm';
+}
+
+async function runScenarioInner(
+  scenario: Scenario,
+  opts: RunOptions,
+): Promise<{ base64: string; mimeType: string }> {
+  const fps = opts.fps ?? scenario.fps ?? 30;
+  const canvas = getCanvas();
+
+  console.log(`[harness] starting "${scenario.name}" fps=${fps} duration=${scenario.duration}ms`);
+
+  if (typeof MediaRecorder === 'undefined') {
+    throw new Error('MediaRecorder is not available in this browser');
+  }
+  if (typeof (canvas as unknown as { captureStream?: () => MediaStream }).captureStream !== 'function') {
+    throw new Error('canvas.captureStream() is not available');
+  }
+
+  const stream = (canvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream })
+    .captureStream(fps);
+  const mimeType = pickMimeType();
+  const chunks: Blob[] = [];
+  // ~4 Mbps gives near-lossless quality at our 640x360 / ~15-30fps target.
+  // VP9 will not exceed what the content needs, so this is an upper bound,
+  // not a fixed rate — quiet/static frames still compress aggressively.
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+
+  const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+  recorder.start();
+
+  // Scenario keyframes are typically sparse (e.g. one every 100ms). Real human
+  // pointermove input fires at 60-120Hz, so the drag handler in main.ts gets
+  // smooth progress. Replaying sparse keyframes verbatim makes the turn jump in
+  // chunky 100ms steps. Densify by linearly interpolating extra pointermove
+  // events between consecutive keyframes, at INTERP_STEP_MS resolution.
+  const INTERP_STEP_MS = 8; // ~120Hz, matches a high-rate trackpad/mouse
+  const keyframes = [...scenario.events].sort((a, b) => a.t - b.t);
+  const dense: PointerEventStep[] = [];
+  for (let k = 0; k < keyframes.length; k++) {
+    const cur = keyframes[k];
+    dense.push(cur);
+    const next = keyframes[k + 1];
+    // Only interpolate between two consecutive moves (or a down→move pair).
+    // Don't fabricate moves across pointerup/down boundaries.
+    if (
+      !next ||
+      next.type === 'pointerdown' ||
+      cur.type === 'pointerup'
+    ) continue;
+    const span = next.t - cur.t;
+    if (span <= INTERP_STEP_MS) continue;
+    const steps = Math.floor(span / INTERP_STEP_MS);
+    for (let s = 1; s < steps; s++) {
+      const u = s / steps;
+      dense.push({
+        t: cur.t + s * (span / steps),
+        type: 'pointermove',
+        x: cur.x + (next.x - cur.x) * u,
+        y: cur.y + (next.y - cur.y) * u,
+      });
+    }
+  }
+
+  const t0 = performance.now();
+  for (const ev of dense) {
+    const elapsed = performance.now() - t0;
+    const wait = ev.t - elapsed;
+    if (wait > 0) await sleep(wait);
+    dispatchPointer(canvas, ev);
+  }
+  const remaining = scenario.duration - (performance.now() - t0);
+  if (remaining > 0) await sleep(remaining);
+
+  // Request a final dataavailable chunk before stopping so we don't lose
+  // the tail of the recording on some MediaRecorder implementations.
+  recorder.requestData();
+  recorder.stop();
+  await withTimeout(stopped, 5_000, 'MediaRecorder.stop');
+
+  const blob = new Blob(chunks, { type: mimeType });
+  console.log(`[harness] recorded ${chunks.length} chunks, ${blob.size} bytes`);
+  if (blob.size === 0) throw new Error('harness: MediaRecorder produced an empty blob');
+
+  const base64 = await blobToBase64(blob);
+  return { base64, mimeType };
+}
+
+async function runScenario(
+  scenario: Scenario,
+  opts: RunOptions = {},
+): Promise<{ base64: string; mimeType: string }> {
+  const deadline = scenario.duration * RUNAWAY_MULTIPLIER;
+  return withTimeout(runScenarioInner(scenario, opts), deadline, `runScenario(${scenario.name})`);
+}
+
+const api: HarnessAPI = {
+  ready: waitForReady(),
+  runScenario,
+};
+
+window.__harness = api;

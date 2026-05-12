@@ -12,6 +12,15 @@ import { getVimeoVideo } from './textures/atlas';
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
 const DRAG_COEFF = 6.5;  // velocity damping (air resistance)
 
+// Energy-based stop condition:  E = ½v² + G·|p − target| < ε
+// This replaces the old magic-epsilon position check.  The energy formulation
+// correctly detects convergence even when position is close but velocity is
+// nonzero, and vice-versa.
+const SETTLE_ENERGY_EPS = 0.005;
+
+// Maximum dt clamp — prevents physics explosions after tab-switch or GC pause.
+const MAX_DT = 1 / 20;  // 50 ms
+
 // Tilt the book so the top leans away from the viewer, giving the natural
 // "book lying on a desk" perspective where the bottom edge is the near edge.
 const BOOK_TILT = 0.76; // radians (~44°)
@@ -41,6 +50,8 @@ class PageTurnDemo {
   private settleVelocity = 0;
   private dragStartX     = 0;   // world X at drag start (projected onto XZ plane)
   private dragPageWidth  = 1.0;
+  private dragPointerId  = -1;   // pointer ID for releasing capture on cancel
+  private lastDragTime   = 0;   // timestamp of last pointermove (for velocity)
 
   // Hit-test plane — matches the tilted book surface so drag X is accurate.
   private hitPlane = new THREE.Plane(
@@ -52,6 +63,12 @@ class PageTurnDemo {
   private frameCount    = 0;
   private fps           = 0;
   private lastFpsUpdate = Date.now();
+  private prevTimestamp = 0; // previous rAF timestamp for real dt
+
+  // ── Fan turn (shift + arrow) ──────────────────────────────────────────────
+  private fanAnimating    = false;
+  private fanProgress     = 0;
+  private fanDuration     = 1.4; // slightly longer for multi-page
 
   // ── Vimeo video (rendered into page textures via atlas.ts) ──────────────
   private vimeoVideo: HTMLVideoElement | null = null;
@@ -148,6 +165,7 @@ class PageTurnDemo {
     canvas.appendChild(this.videoCreditEl);
 
     this.setupEventHandlers();
+    this.prevTimestamp = performance.now();
     this.animate();
     window.addEventListener('resize', () => this.onWindowResize());
   }
@@ -178,7 +196,13 @@ class PageTurnDemo {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
-        this.turnNext(e.key === 'ArrowLeft');
+        if (e.shiftKey) {
+          this.fanTurnNext(e.key === 'ArrowLeft');
+        } else {
+          this.turnNext(e.key === 'ArrowLeft');
+        }
+      } else if (e.key === 'Escape') {
+        this.cancelCurrentAnimation();
       } else if (e.key === 'h' || e.key === 'H') {
         document.getElementById('ui-overlay')?.classList.toggle('visible');
       }
@@ -197,7 +221,7 @@ class PageTurnDemo {
 
   private onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;  // primary button only
-    if (this.timedAnimating || this.dragging || this.settling) return;
+    if (this.timedAnimating || this.dragging || this.settling || this.fanAnimating) return;
 
     const wx = this.pointerWorldX(e.clientX, e.clientY);
     if (wx === null) return;
@@ -223,6 +247,8 @@ class PageTurnDemo {
     this.dragProgress = 0;
     this.dragVelocity = 0;
     this.dragStartX   = wx;
+    this.dragPointerId = e.pointerId;
+    this.lastDragTime = performance.now();
     this.controls.enabled = false;
     this.renderer.domElement.setPointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'grabbing';
@@ -252,7 +278,11 @@ class PageTurnDemo {
 
     const prev = this.dragProgress;
     this.dragProgress = Math.max(0, Math.min(1, raw));
-    this.dragVelocity = (this.dragProgress - prev) * 60; // approximate per-second rate
+    // Compute velocity from real elapsed time, not frame count
+    const now = performance.now();
+    const elapsed = (now - this.lastDragTime) / 1000;
+    this.lastDragTime = now;
+    this.dragVelocity = elapsed > 0.001 ? (this.dragProgress - prev) / elapsed : 0;
     this.book.updateTurningPage(this.dragProgress);
     this.updateUI();
   }
@@ -263,7 +293,14 @@ class PageTurnDemo {
     this.controls.enabled = true;
     this.renderer.domElement.releasePointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'default';
-    this.beginSettle(this.dragProgress >= 0.5 ? 1 : 0);
+    // Flick detection: if velocity is fast enough, complete/cancel regardless
+    // of position.  This gives responsive touch behavior on mobile.
+    const FLICK_THRESHOLD = 1.5; // progress units / second
+    if (Math.abs(this.dragVelocity) > FLICK_THRESHOLD) {
+      this.beginSettle(this.dragVelocity > 0 ? 1 : 0);
+    } else {
+      this.beginSettle(this.dragProgress >= 0.5 ? 1 : 0);
+    }
   }
 
   private onPointerCancel(): void {
@@ -299,7 +336,7 @@ class PageTurnDemo {
   // ── Timed button/keyboard turn ─────────────────────────────────────────────
 
   private turnNext(reverse: boolean): void {
-    if (this.timedAnimating || this.dragging || this.settling) return;
+    if (this.timedAnimating || this.dragging || this.settling || this.fanAnimating) return;
     const state = this.book.getState();
     const started = reverse
       ? (state.canTurnBackward()  && this.book.startReverseTurn())
@@ -311,11 +348,65 @@ class PageTurnDemo {
     this.timedProgress  = 0;
   }
 
+  // ── Fan turn (shift + arrow) ───────────────────────────────────────────────
+
+  private fanTurnNext(reverse: boolean): void {
+    if (this.timedAnimating || this.dragging || this.settling || this.fanAnimating) return;
+    const count = this.book.getMaxFanCount(reverse);
+    if (count < 1) return;
+    const started = this.book.startFanTurn(count, reverse);
+    if (!started) return;
+
+    this.fadeOutCredit();
+    this.fanAnimating = true;
+    this.fanProgress  = 0;
+  }
+
+  // ── Cancel ─────────────────────────────────────────────────────────────────
+
+  /** Cancel any in-progress animation (timed turn, fan turn, settle, or drag). */
+  private cancelCurrentAnimation(): void {
+    if (this.dragging) {
+      this.dragging = false;
+      this.book.cancelTurn();
+      this.controls.enabled = true;
+      try { this.renderer.domElement.releasePointerCapture(this.dragPointerId); } catch (_) { /* already released */ }
+      this.renderer.domElement.style.cursor = 'default';
+      this.updateUI();
+    } else if (this.fanAnimating) {
+      this.book.cancelFanTurn();
+      this.fanAnimating = false;
+      this.controls.enabled = true;
+      this.updateUI();
+    } else if (this.timedAnimating) {
+      this.book.cancelTurn();
+      this.timedAnimating = false;
+      this.controls.enabled = true;
+      this.updateUI();
+    } else if (this.settling) {
+      this.settling = false;
+      this.book.cancelTurn();
+      this.controls.enabled = true;
+      this.renderer.domElement.style.cursor = 'default';
+      this.updateUI();
+    }
+  }
+
+  // ── Accessibility ───────────────────────────────────────────────────────────
+
+  /** Push a page-change announcement into the live region for screen readers. */
+  private announcePageChange(): void {
+    const liveRegion = document.getElementById('sr-announcer');
+    if (!liveRegion) return;
+    const desc = this.book.getState().getStateDescription();
+    liveRegion.textContent = desc;
+  }
+
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   private updateUI(): void {
     const state   = this.book.getState();
-    const busy    = this.timedAnimating || this.dragging || this.settling;
+    const busy    = this.timedAnimating || this.dragging || this.settling || this.fanAnimating;
 
     const stateDisplay  = document.getElementById('state-display');
     const currentPageEl = document.getElementById('current-page');
@@ -335,7 +426,10 @@ class PageTurnDemo {
   private animate = (): void => {
     requestAnimationFrame(this.animate);
 
-    const dt = 1 / 60; // fixed timestep approximation
+    // Real elapsed time with clamp to avoid physics explosions after tab-switch
+    const now = performance.now();
+    const dt = Math.min((now - this.prevTimestamp) / 1000, MAX_DT);
+    this.prevTimestamp = now;
 
     // Timed animation (buttons / keyboard)
     if (this.timedAnimating) {
@@ -347,24 +441,49 @@ class PageTurnDemo {
         this.timedAnimating = false;
         this.controls.enabled = true;
         this.checkVideoSpread();
+        this.announcePageChange();
         this.updateUI();
       } else {
         this.book.updateTurningPage(this.timedProgress);
       }
     }
 
-    // Physics settle — gravity (constant acceleration toward target) + air resistance
+    // Fan animation (shift + arrow: multiple pages turning with stagger)
+    if (this.fanAnimating) {
+      this.fanProgress += dt / this.fanDuration;
+      if (this.fanProgress >= 1.0) {
+        this.fanProgress = 1.0;
+        this.book.updateFanTurn(1.0);
+        this.book.completeFanTurn();
+        this.fanAnimating = false;
+        this.controls.enabled = true;
+        this.checkVideoSpread();
+        this.announcePageChange();
+        this.updateUI();
+      } else {
+        this.book.updateFanTurn(this.fanProgress);
+      }
+    }
+
+    // Physics settle — gravity + air resistance, energy-based stop condition
     if (this.settling) {
       const dir = this.settleTarget >= 1 ? 1 : -1;
       this.settleVelocity += dir * GRAVITY * dt;
       this.settleVelocity *= Math.max(0, 1 - DRAG_COEFF * dt);
-      this.dragProgress    = Math.max(0, Math.min(1, this.dragProgress + this.settleVelocity * dt));
+      const rawP = this.dragProgress + this.settleVelocity * dt;
+      this.dragProgress = Math.max(0, Math.min(1, rawP));
+      // Inelastic wall: zero velocity when p clamps at [0,1] boundary,
+      // otherwise gravity keeps pumping energy into a pinned page.
+      if (rawP !== this.dragProgress) this.settleVelocity = 0;
 
       this.book.updateTurningPage(this.dragProgress);
 
-      const done = (this.settleTarget >= 1 && this.dragProgress >= 1 - 0.001) ||
-                   (this.settleTarget <= 0 && this.dragProgress <= 0.001);
-      if (done) {
+      // Energy-based stop: E = ½v² + G·|p − target|
+      // This correctly detects convergence regardless of whether position
+      // or velocity is the dominant residual.
+      const energy = 0.5 * this.settleVelocity * this.settleVelocity
+                   + GRAVITY * Math.abs(this.dragProgress - this.settleTarget);
+      if (energy < SETTLE_ENERGY_EPS) {
         this.dragProgress = this.settleTarget;
         this.book.updateTurningPage(this.dragProgress);
         this.settling     = false;
@@ -375,17 +494,18 @@ class PageTurnDemo {
           this.book.cancelTurn();
         }
         this.checkVideoSpread();
+        this.announcePageChange();
         this.updateUI();
       }
     }
 
     // FPS counter
     this.frameCount++;
-    const now = Date.now();
-    if (now - this.lastFpsUpdate >= 1000) {
-      this.fps = (this.frameCount * 1000) / (now - this.lastFpsUpdate);
+    const fpsNow = Date.now();
+    if (fpsNow - this.lastFpsUpdate >= 1000) {
+      this.fps = (this.frameCount * 1000) / (fpsNow - this.lastFpsUpdate);
       this.frameCount   = 0;
-      this.lastFpsUpdate = now;
+      this.lastFpsUpdate = fpsNow;
       this.updateUI();
     }
 

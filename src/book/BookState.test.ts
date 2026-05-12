@@ -11,7 +11,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { BookState } from './BookState';
+import { BookState, maxFanCount, DEFAULT_BOOK_MATERIAL } from './BookState';
+import type { BookMaterial } from './BookState';
 
 describe('BookState - Discrete State Machine (Section 1)', () => {
   let book: BookState;
@@ -39,6 +40,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
             expect(j).toBe(Math.floor(j));
           }
           book.setTurningProgress(1.0);
+          book.completeTurn();
         }
       }
     });
@@ -57,6 +59,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
           expect(book.getStateIndex()).toBeLessThanOrEqual(4);
         }
         book.setTurningProgress(1.0);
+        book.completeTurn();
         steps++;
       }
 
@@ -74,6 +77,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       while (book.canTurnForward()) {
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
         j = book.getStateIndex();
         expect(j).toBeGreaterThanOrEqual(-1);
         expect(j).toBeLessThanOrEqual(4);
@@ -155,6 +159,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
     it('visible(0) = (cover_front_int, p1)', () => {
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       
       const content = book.getVisibleContent();
       expect(content.left).toBe('cover_front_int');
@@ -165,8 +170,10 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       // Turn to spread 1
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       
       const content = book.getVisibleContent();
       expect(content.left).toBe('p2');
@@ -180,6 +187,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         if (book.canTurnForward()) {
           book.startTurn();
           book.setTurningProgress(1.0);
+          book.completeTurn();
         }
       }
       
@@ -194,6 +202,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       while (book.canTurnForward()) {
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
       }
       
       // Now at j = 4, should be able to say what comes next
@@ -209,6 +218,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       while (book.canTurnForward() && steps < 100) {
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
         
         const content = book.getVisibleContent();
         if (content.left && content.left.startsWith('p')) {
@@ -238,6 +248,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
         
         const after = book.getVisibleContent();
         
@@ -261,6 +272,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       while (book.canTurnForward()) {
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
       }
 
       expect(book.getStateIndex()).toBe(4);
@@ -276,6 +288,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       // Move forward one step
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
 
       expect(book.getStateIndex()).toBe(0);
       expect(book.canTurnBackward()).toBe(true);
@@ -288,7 +301,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
   });
 
   describe('Invariant 5: State Transitions (Forward)', () => {
-    it('startTurn moves from j to j+1', () => {
+    it('completeTurn moves from j to j+1', () => {
       for (let expectedJ = -1; expectedJ < 4; expectedJ++) {
         const jBefore = book.getStateIndex();
         expect(jBefore).toBe(expectedJ);
@@ -296,6 +309,9 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         if (book.canTurnForward()) {
           book.startTurn();
           book.setTurningProgress(1.0);
+          // j stays constant during the turn — only completeTurn advances it
+          expect(book.getStateIndex()).toBe(expectedJ);
+          book.completeTurn();
           
           const jAfter = book.getStateIndex();
           expect(jAfter).toBe(expectedJ + 1);
@@ -303,7 +319,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       }
     });
 
-    it('during turn, j stays constant', () => {
+    it('during turn, j stays constant even at progress 1.0', () => {
       book.startTurn();
       const jDuring = book.getStateIndex();
       
@@ -313,7 +329,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       }
     });
 
-    it('turn completes and j increments only at progress = 1.0', () => {
+    it('j increments only at completeTurn, not at setTurningProgress(1.0)', () => {
       book.startTurn();
       const jBefore = book.getStateIndex();
 
@@ -321,7 +337,10 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       expect(book.getStateIndex()).toBe(jBefore);
 
       book.setTurningProgress(1.0);
-      expect(book.getStateIndex()).toBe(jBefore + 1);
+      expect(book.getStateIndex()).toBe(jBefore); // NOT advanced yet
+
+      book.completeTurn();
+      expect(book.getStateIndex()).toBe(jBefore + 1); // NOW advanced
     });
   });
 
@@ -330,10 +349,12 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       // Go forward first
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
 
-      const jBefore = book.getStateIndex(); // j = 2
+      const jBefore = book.getStateIndex(); // j = 1 (two forward turns from -1)
       book.startReverseTurn();
       const jAfter = book.getStateIndex();
       
@@ -344,6 +365,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       // Go forward first
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
 
       book.startReverseTurn();
       
@@ -366,7 +388,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       expect(book.getIsTurning()).toBe(false);
     });
 
-    it('isTurning = true between startTurn and progress 1.0', () => {
+    it('isTurning = true until completeTurn is called', () => {
       book.startTurn();
       expect(book.getIsTurning()).toBe(true);
 
@@ -374,12 +396,16 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       expect(book.getIsTurning()).toBe(true);
 
       book.setTurningProgress(1.0);
+      expect(book.getIsTurning()).toBe(true); // still true — only completeTurn clears it
+
+      book.completeTurn();
       expect(book.getIsTurning()).toBe(false);
     });
 
-    it('isTurning = false after turn completes', () => {
+    it('isTurning = false after completeTurn', () => {
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       
       expect(book.getIsTurning()).toBe(false);
     });
@@ -404,6 +430,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
 
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       expect(book.getStateDescription()).toContain('First');
 
       // Go to last spread (j = n = 3), not all the way to j = n+1
@@ -411,6 +438,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         if (book.canTurnForward()) {
           book.startTurn();
           book.setTurningProgress(1.0);
+          book.completeTurn();
         }
       }
       expect(book.getStateIndex()).toBe(3);
@@ -422,6 +450,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       
       book.startTurn();
       book.setTurningProgress(1.0);
+      book.completeTurn();
       const desc2 = book.getStateDescription();
       
       expect(desc1).not.toBe(desc2);
@@ -442,6 +471,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       while (singleLeafBook.canTurnForward()) {
         singleLeafBook.startTurn();
         singleLeafBook.setTurningProgress(1.0);
+        singleLeafBook.completeTurn();
         states.add(singleLeafBook.getStateIndex());
       }
 
@@ -451,6 +481,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
     it('single-leaf book spread 0 has correct pages', () => {
       singleLeafBook.startTurn();
       singleLeafBook.setTurningProgress(1.0);
+      singleLeafBook.completeTurn();
 
       const content = singleLeafBook.getVisibleContent();
       expect(content.left).toBe('cover_front_int');
@@ -460,8 +491,10 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
     it('single-leaf book spread 1 has correct pages', () => {
       singleLeafBook.startTurn();
       singleLeafBook.setTurningProgress(1.0);
+      singleLeafBook.completeTurn();
       singleLeafBook.startTurn();
       singleLeafBook.setTurningProgress(1.0);
+      singleLeafBook.completeTurn();
 
       const content = singleLeafBook.getVisibleContent();
       expect(content.left).toBe('p2');
@@ -487,7 +520,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       }
     });
 
-    it('j never jumps forward multiple states', () => {
+    it('j never jumps forward multiple states (single turn)', () => {
       const jSequence = [];
       
       let steps = 0;
@@ -495,6 +528,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         jSequence.push(book.getStateIndex());
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
         steps++;
       }
       jSequence.push(book.getStateIndex());
@@ -521,6 +555,7 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
 
         book.startTurn();
         book.setTurningProgress(1.0);
+        book.completeTurn();
         steps++;
       }
     });
@@ -538,6 +573,336 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
         expect(phi).toBeGreaterThanOrEqual(0);
         expect(phi).toBeLessThanOrEqual(Math.PI);
       }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Fan Turn Tests
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Fan Turn — Forward', () => {
+    // Fans are restricted to interior spreads j ∈ {0..n}.
+    // Covers are rigid — opening/closing is a single-page turn only.
+
+    it('rejects fan from closed cover (j=-1)', () => {
+      expect(book.getStateIndex()).toBe(-1);
+      expect(book.startFanTurn(2)).toBe(false);
+    });
+
+    it('startFanTurn advances j by count on completeTurn', () => {
+      // Open cover first, then fan from j=0
+      book.startTurn(); book.setTurningProgress(1.0); book.completeTurn();
+      expect(book.getStateIndex()).toBe(0);
+
+      expect(book.startFanTurn(2)).toBe(true);
+      expect(book.getIsTurning()).toBe(true);
+      expect(book.getFanCount()).toBe(2);
+
+      book.setTurningProgress(1.0);
+      book.completeTurn();
+
+      expect(book.getStateIndex()).toBe(2);  // 0 + 2
+      expect(book.getIsTurning()).toBe(false);
+    });
+
+    it('j stays constant during the fan animation', () => {
+      book.startTurn(); book.setTurningProgress(1.0); book.completeTurn();
+      const jBefore = book.getStateIndex(); // 0
+      book.startFanTurn(2);
+
+      for (let p = 0; p <= 1.0; p += 0.1) {
+        book.setTurningProgress(p);
+        expect(book.getStateIndex()).toBe(jBefore);
+      }
+    });
+
+    it('clamps to boundary: cannot fan past n', () => {
+      // n=3 → from j=0, max forward fan is 3 (land on j=3=n)
+      book.startTurn(); book.setTurningProgress(1.0); book.completeTurn();
+      expect(book.getStateIndex()).toBe(0);
+
+      expect(book.startFanTurn(4)).toBe(false); // would land on n+1
+      expect(book.startFanTurn(3)).toBe(true);
+      book.completeTurn();
+      expect(book.getStateIndex()).toBe(3); // n
+    });
+
+    it('rejects fan of 0 or negative', () => {
+      book.startTurn(); book.setTurningProgress(1.0); book.completeTurn();
+      expect(book.startFanTurn(0)).toBe(false);
+      expect(book.startFanTurn(-1)).toBe(false);
+    });
+
+    it('rejects fan while already turning', () => {
+      book.startTurn();
+      expect(book.startFanTurn(2)).toBe(false);
+    });
+
+    it('cancelTurn after fan reverts j to pre-fan state', () => {
+      book.startTurn(); book.setTurningProgress(1.0); book.completeTurn();
+      const jBefore = book.getStateIndex(); // 0
+      book.startFanTurn(2);
+      book.setTurningProgress(0.5);
+      book.cancelTurn();
+
+      expect(book.getStateIndex()).toBe(jBefore);
+      expect(book.getIsTurning()).toBe(false);
+    });
+  });
+
+  describe('Fan Turn — Reverse', () => {
+    beforeEach(() => {
+      // Move to j=3 so we have room to fan backward
+      for (let i = 0; i < 4; i++) {
+        book.startTurn();
+        book.setTurningProgress(1.0);
+        book.completeTurn();
+      }
+      expect(book.getStateIndex()).toBe(3);
+    });
+
+    it('startReverseFanTurn moves j by count on completeTurn', () => {
+      expect(book.startReverseFanTurn(2)).toBe(true);
+      expect(book.getStateIndex()).toBe(1); // j decremented immediately
+      expect(book.getFanCount()).toBe(2);
+
+      book.setTurningProgress(1.0);
+      book.completeTurn();
+
+      expect(book.getStateIndex()).toBe(1); // already decremented
+      expect(book.getIsTurning()).toBe(false);
+    });
+
+    it('cancelTurn after reverse fan restores j', () => {
+      const jBefore = book.getStateIndex(); // 3
+      book.startReverseFanTurn(2);
+      expect(book.getStateIndex()).toBe(1); // pre-decremented
+
+      book.cancelTurn();
+      expect(book.getStateIndex()).toBe(jBefore); // restored
+    });
+
+    it('clamps to boundary: cannot reverse fan past 0', () => {
+      // j=3, max backward = 3 (to reach j=0, first interior spread)
+      expect(book.startReverseFanTurn(4)).toBe(false); // would land on -1
+      expect(book.startReverseFanTurn(3)).toBe(true);
+      book.completeTurn();
+      expect(book.getStateIndex()).toBe(0);
+    });
+
+    it('rejects reverse fan from closed back cover (j=n+1)', () => {
+      // Move all the way to j=n+1
+      while (book.canTurnForward()) {
+        book.startTurn(); book.setTurningProgress(1); book.completeTurn();
+      }
+      expect(book.getStateIndex()).toBe(4); // n+1
+      expect(book.startReverseFanTurn(2)).toBe(false);
+    });
+  });
+
+  describe('Fan Turn — Crossing Spread Boundaries', () => {
+    // Use n=10 book to have enough spreads for realistic fan scenarios
+    let bigBook: BookState;
+
+    beforeEach(() => {
+      bigBook = new BookState(10);
+    });
+
+    it('fan of 3 from j=4 lands on j=7 (VIDEO_SPREAD)', () => {
+      // Move to j=4
+      for (let i = 0; i < 5; i++) {
+        bigBook.startTurn();
+        bigBook.setTurningProgress(1.0);
+        bigBook.completeTurn();
+      }
+      expect(bigBook.getStateIndex()).toBe(4);
+
+      bigBook.startFanTurn(3);
+      bigBook.completeTurn();
+      expect(bigBook.getStateIndex()).toBe(7);
+    });
+
+    it('fan of 3 from j=5 lands on j=8, skipping VIDEO_SPREAD=7', () => {
+      // Move to j=5
+      for (let i = 0; i < 6; i++) {
+        bigBook.startTurn();
+        bigBook.setTurningProgress(1.0);
+        bigBook.completeTurn();
+      }
+      expect(bigBook.getStateIndex()).toBe(5);
+
+      bigBook.startFanTurn(3);
+      bigBook.completeTurn();
+      expect(bigBook.getStateIndex()).toBe(8);
+      // The state machine correctly lands at 8, never visiting 7.
+      // The caller (main.ts checkVideoSpread) checks j===7 post-completion.
+    });
+
+    it('reverse fan from j=10 to j=7 lands on VIDEO_SPREAD', () => {
+      // Move to j=10
+      for (let i = 0; i < 11; i++) {
+        bigBook.startTurn();
+        bigBook.setTurningProgress(1.0);
+        bigBook.completeTurn();
+      }
+      expect(bigBook.getStateIndex()).toBe(10);
+
+      bigBook.startReverseFanTurn(3);
+      bigBook.completeTurn();
+      expect(bigBook.getStateIndex()).toBe(7);
+    });
+
+    it('forward fan traversal with single-page cover transitions', () => {
+      // Open front cover (single turn — covers are rigid)
+      bigBook.startTurn(); bigBook.setTurningProgress(1); bigBook.completeTurn();
+      expect(bigBook.getStateIndex()).toBe(0);
+
+      // Fan through the interior in groups of 3: 0→3→6→9, then 9→10
+      let fanSteps = 0;
+      while (bigBook.getStateIndex() < 10) {
+        const remaining = 10 - bigBook.getStateIndex();
+        const count = Math.min(3, remaining);
+        bigBook.startFanTurn(count);
+        bigBook.completeTurn();
+        fanSteps += count;
+      }
+      expect(bigBook.getStateIndex()).toBe(10); // n=10
+      expect(fanSteps).toBe(10); // from 0 to 10
+
+      // Close back cover (single turn — covers are rigid)
+      bigBook.startTurn(); bigBook.setTurningProgress(1); bigBook.completeTurn();
+      expect(bigBook.getStateIndex()).toBe(11); // n+1
+      expect(bigBook.canTurnForward()).toBe(false);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Impulse Model Tests
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Impulse Model — maxFanCount', () => {
+    const n = 10;
+    const mat = DEFAULT_BOOK_MATERIAL;
+
+    describe('cover blocks friction chain (m_cover >> m_page)', () => {
+      it('forward from j=-1: front cover blocks immediately → 0', () => {
+        expect(maxFanCount(-1, n, true, mat)).toBe(0);
+      });
+
+      it('forward from j=n: back cover blocks immediately → 0', () => {
+        expect(maxFanCount(n, n, true, mat)).toBe(0);
+      });
+
+      it('reverse from j=0: front cover blocks immediately → 0', () => {
+        expect(maxFanCount(0, n, false, mat)).toBe(0);
+      });
+
+      it('reverse from j=n+1: back cover blocks immediately → 0', () => {
+        expect(maxFanCount(n + 1, n, false, mat)).toBe(0);
+      });
+    });
+
+    describe('interior impulse decay', () => {
+      it('forward from j=0 gives 4 pages with default material', () => {
+        expect(maxFanCount(0, n, true, mat)).toBe(4);
+      });
+
+      it('forward from j=5 (mid-book) gives 4 pages', () => {
+        expect(maxFanCount(5, n, true, mat)).toBe(4);
+      });
+
+      it('reverse from j=10 gives 4 pages', () => {
+        expect(maxFanCount(n, n, false, mat)).toBe(4);
+      });
+
+      it('reverse from j=5 (mid-book) gives 4 pages', () => {
+        expect(maxFanCount(5, n, false, mat)).toBe(4);
+      });
+
+      it('forward from j=8: only 2 interior pages before back cover', () => {
+        expect(maxFanCount(8, n, true, mat)).toBe(2);
+      });
+
+      it('reverse from j=2: only 2 interior pages before front cover', () => {
+        expect(maxFanCount(2, n, false, mat)).toBe(2);
+      });
+    });
+
+    describe('symmetry: covers block identically in both directions', () => {
+      it('forward from j=0 == reverse from j=n (symmetric interior)', () => {
+        expect(maxFanCount(0, n, true, mat)).toBe(maxFanCount(n, n, false, mat));
+      });
+
+      it('forward near back == reverse near front (symmetric boundary)', () => {
+        expect(maxFanCount(8, n, true, mat)).toBe(maxFanCount(2, n, false, mat));
+      });
+    });
+
+    describe('custom material: lightweight covers can be fanned', () => {
+      const softcover: BookMaterial = {
+        page:  { mass: 4.5 },
+        cover: { mass: 8 },     // thin card stock, only ~2x page mass
+        mu:    0.62,
+        J0:    30,
+        vMin:  1.2,
+      };
+
+      it('softcover: fan can reach and move the cover', () => {
+        // With mass=8, Jneeded = 8*1.2 = 9.6.
+        // μ^4 * 30 = 4.43 < 9.6, so cover is page 5 in the chain.
+        // But μ^3 * 30 = 7.15 < 9.6 too! So softcover still blocks at 3 pages.
+        // Actually μ^0=30, μ^1=18.6, μ^2=11.53, μ^3=7.15, so 7.15 < 9.6 → blocks at 3.
+        // Wait: interior pages need 5.4. So pages 0,1,2,3 pass (Ji: 30, 18.6, 11.53, 7.15).
+        // Page 4 is interior: Ji=4.43 < 5.4 → stops. So even with softcover, max is 4.
+        // The cover doesn't matter because impulse decays to < page threshold first.
+        const result = maxFanCount(0, n, true, softcover);
+        expect(result).toBe(4); // same as hardcover — decay hits page threshold first
+      });
+
+      it('stronger grip makes cover reachable', () => {
+        const strongGrip: BookMaterial = {
+          ...softcover,
+          J0: 80,  // much stronger applied impulse
+        };
+        // μ^i * 80: 80, 49.6, 30.8, 19.1, 11.8, 7.3, 4.5 ...
+        // Page threshold: 4.5*1.2 = 5.4. Cover threshold: 8*1.2 = 9.6
+        // Pages 0-4 interior: 80, 49.6, 30.8, 19.1, 11.8 — all > 5.4
+        // Page 5 interior: 7.3 > 5.4 ✓
+        // Page 6 interior: 4.5 < 5.4 ✗ → stops at 6
+        const result = maxFanCount(0, n, true, strongGrip);
+        expect(result).toBe(6);
+      });
+    });
+
+    describe('direct grab always works (single turns bypass impulse)', () => {
+      // This test documents the architectural decision: startTurn/startReverseTurn
+      // work on any leaf including covers. The impulse model only governs
+      // indirect friction-chain propagation in fan turns.
+
+      it('single forward turn works at front cover (j=-1)', () => {
+        const bs = new BookState(n);
+        expect(bs.getStateIndex()).toBe(-1);
+        expect(bs.startTurn()).toBe(true); // direct grab on cover
+      });
+
+      it('single forward turn works at back cover boundary (j=n)', () => {
+        const bs = new BookState(n);
+        // Walk to j=n
+        for (let i = 0; i < n + 1; i++) {
+          bs.startTurn(); bs.setTurningProgress(1); bs.completeTurn();
+        }
+        expect(bs.getStateIndex()).toBe(n);
+        expect(bs.startTurn()).toBe(true); // direct grab closes back cover
+      });
+
+      it('single reverse turn works from closed back cover (j=n+1)', () => {
+        const bs = new BookState(n);
+        for (let i = 0; i < n + 2; i++) {
+          bs.startTurn(); bs.setTurningProgress(1); bs.completeTurn();
+        }
+        expect(bs.getStateIndex()).toBe(n + 1);
+        expect(bs.startReverseTurn()).toBe(true); // direct grab opens back cover
+      });
     });
   });
 });

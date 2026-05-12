@@ -1,0 +1,23 @@
+# Run the harness in a container and dump captured webm files to harness/output/.
+#
+#   docker compose -f harness/docker-compose.yml up --build --abort-on-container-exit
+#
+# The Playwright base image is shared with any other project on this host
+# that uses mcr.microsoft.com/playwright:v1.49.0-jammy — Docker's layer cache
+# means the browsers are downloaded at most once.
+
+services:
+  harness:
+    build:
+      context: ..
+      dockerfile: harness/Dockerfile
+    image: pageturn-harness:latest
+    container_name: pageturn-harness
+    volumes:
+      # Captured videos land on the host so they can be inspected/shared.
+      - ./output:/work/harness/output
+      # Editable scenarios — change a JSON file and re-run without rebuilding.
+      - ./scenarios:/work/harness/scenarios:ro
+    # No ports published: the dev server only needs to be reachable inside
+    # the container. Add a `ports:` block here if you want to view the
+    # harness page from the host browser for debugging.

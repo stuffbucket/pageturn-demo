@@ -1,0 +1,17 @@
+{
+  "name": "pageturn-harness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Headless capture harness for the page-turn demo (Playwright + CCapture.js)",
+  "scripts": {
+    "run": "tsx runner/run.ts",
+    "run:all": "tsx runner/run.ts --all"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.0",
+    "playwright": "1.49.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}

@@ -182,3 +182,20 @@ canvas {
 #video-credit:hover {
   color: rgba(255, 255, 255, 1);
 }
+
+/* Long-press screenshot capture flash overlay (gated on ?capture=1).
+   The element is appended once at install time and toggles `.flashing`
+   whenever a screenshot fires. */
+.long-press-flash {
+  position: fixed;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 99999;
+  transition: opacity 0.08s ease-out;
+}
+.long-press-flash.flashing {
+  opacity: 0.9;
+  transition: opacity 0.25s ease-out;
+}

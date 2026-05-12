@@ -9,6 +9,7 @@ import { Book } from './book/Book';
 import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
 import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
+import { installLongPressCapture, type StateSnapshot } from "./long-press-capture";
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -185,6 +186,9 @@ class PageTurnDemo {
 
     this.setupEventHandlers();
     this.setupDebugUI();
+    // Long-press screenshot capture — gated on `?capture=1`; module is a
+    // no-op otherwise.  See src/long-press-capture.ts for the protocol.
+    installLongPressCapture(this.renderer.domElement, () => this.getDebugSnapshot());
     this.prevTimestamp = performance.now();
     this.animate();
     window.addEventListener('resize', () => this.onWindowResize());
@@ -527,6 +531,47 @@ class PageTurnDemo {
   }
 
   // ── UI ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Build a full state snapshot for downstream consumers (currently the
+   * long-press screenshot capture, possibly more later).  Mirrors the shape
+   * already shown by the debug HUD so screenshots, telemetry, and on-screen
+   * debug all describe the world the same way.
+   */
+  public getDebugSnapshot(): StateSnapshot {
+    const state = this.book.getState();
+    const c = state.getCrease();
+    const dp = state.getDragPoint();
+    return {
+      drag: {
+        isDragging: this.dragging,
+        dragPoint: dp ? { x: dp.x, y: dp.y } : null,
+        dragProgress: this.dragProgress,
+        dragVelocity: this.dragVelocity,
+      },
+      crease: {
+        alpha: c.alpha,
+        originY: c.originOnEdge.y,
+        dihedral: c.dihedral,
+        creaseDir: { x: c.creaseDir.x, y: c.creaseDir.y },
+        cornerDir: { x: c.cornerDir.x, y: c.cornerDir.y },
+      },
+      turn: {
+        j: state.getStateIndex(),
+        phi: state.getRotationAngle(),
+        progress: state.getTurningProgress(),
+        isTurning: state.getIsTurning(),
+        isReverse: state.getIsReverseTurn(),
+        settling: this.settling,
+        settleTarget: this.settleTarget,
+      },
+      camera: {
+        position: { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z },
+        target:   { x: this.controls.target.x,  y: this.controls.target.y,  z: this.controls.target.z  },
+      },
+      fps: this.fps,
+    };
+  }
 
   private updateUI(): void {
     const state   = this.book.getState();

@@ -19,6 +19,20 @@ docker compose -f harness/docker-compose.yml up --build --abort-on-container-exi
 
 Captured videos appear in `harness/output/<scenario-name>.webm`.
 
+The compose file mounts three host paths into the container:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `harness/output/` | `/work/harness/output` | Recorded webm captures land here. |
+| `harness/scenarios/` | `/work/harness/scenarios` (ro) | Edit scenario JSON without rebuilding. |
+| `contrib/screenshots/` | `/work/contrib/screenshots` | Long-press screenshot captures from the Vite `screenshot-server` plugin. |
+
+Long-press captures from the prototype running inside the harness will appear
+on the host at `contrib/screenshots/` (gitignored). Use this for
+harness-driven validation runs — without the mount, files written by the
+in-container POST `/__screenshot` handler would disappear when the container
+exits.
+
 The base image is `mcr.microsoft.com/playwright:v1.49.0-jammy`. Docker's layer
 cache shares it with every other project on the host that uses the same tag,
 so the multi-gigabyte Playwright browser download happens at most once.

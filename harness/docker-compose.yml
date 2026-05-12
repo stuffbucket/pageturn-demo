@@ -17,6 +17,9 @@ services:
       - ./output:/work/harness/output
       # Editable scenarios — change a JSON file and re-run without rebuilding.
       - ./scenarios:/work/harness/scenarios:ro
+      # Long-press screenshot captures (POST /__screenshot in the Vite plugin)
+      # land on the host so they survive container exit. See harness/README.md.
+      - ../contrib/screenshots:/work/contrib/screenshots
     # No ports published: the dev server only needs to be reachable inside
     # the container. Add a `ports:` block here if you want to view the
     # harness page from the host browser for debugging.

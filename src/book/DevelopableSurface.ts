@@ -157,9 +157,11 @@ export function cylindricalCurlPos(
   origin: Vec3 = { x: 0, y: 0, z: 0 },
   flapSign: 1 | -1 = 1,
 ): Vec3 {
-  // In-plane normal to crease, pointing into the flap.
-  const nx = -creaseAxis.y * flapSign;
-  const ny = creaseAxis.x * flapSign;
+  // In-plane normal to crease, pointing into the flap. For the canonical
+  // book orientation (k̂ = +ŷ along the spine, flap on the +x side) this
+  // is +x̂; flapSign = -1 mirrors to the other side of the crease.
+  const nx = creaseAxis.y * flapSign;
+  const ny = -creaseAxis.x * flapSign;
   // n̂ = (nx, ny, 0); ẑ = (0, 0, 1). Rotate both by `dihedral` around k̂.
   // Rodrigues with k̂ in the xy-plane: for a vector v,
   //   v' = v·cos + (k̂×v)·sin + k̂(k̂·v)(1−cos)

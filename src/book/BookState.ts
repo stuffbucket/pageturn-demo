@@ -10,6 +10,7 @@
  */
 
 import { creaseFromDrag, type Crease, type Vec2 } from './CreaseGeometry';
+import { emit as emitTelemetry } from '../telemetry';
 
 // ── Physical material properties ─────────────────────────────────────────────
 // Impulse propagation through a stack:
@@ -141,6 +142,14 @@ export class BookState {
   getPageWidth(): number { return this.pageWidth; }
   /** Page height in world units, as last set via setPageSize. */
   getPageHeight(): number { return this.pageHeight; }
+
+  /**
+   * Read-only accessor for the current 2D drag point in page-local coords,
+   * or null if no interactive drag is in progress.  Exposed for the debug HUD.
+   */
+  getDragPoint(): Vec2 | null {
+    return this.dragPoint ? { x: this.dragPoint.x, y: this.dragPoint.y } : null;
+  }
 
   /** The corner of the right-page-frame currently being "grabbed" (top-right). */
   private getCorner(): Vec2 {
@@ -278,6 +287,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    emitTelemetry('state-transition', { op: 'startTurn', j: this.j, phi: this.phi, isReverseTurn: false });
     return true;
   }
 
@@ -299,6 +309,7 @@ export class BookState {
     this.isReverseTurn = true;
     this.fanCount = 1;
     this.dragPoint = null;
+    emitTelemetry('state-transition', { op: 'startReverseTurn', j: this.j, phi: this.phi, isReverseTurn: true });
     return true;
   }
 
@@ -435,6 +446,7 @@ export class BookState {
    */
   completeTurn(): void {
     if (!this.isTurning) return;
+    const wasReverse = this.isReverseTurn;
     if (this.isReverseTurn) {
       // j was already decremented in startReverseTurn/startReverseFanTurn
       this.phi = 0;
@@ -446,6 +458,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    emitTelemetry('state-transition', { op: 'completeTurn', j: this.j, phi: this.phi, isReverseTurn: wasReverse });
   }
 
   /**
@@ -454,6 +467,7 @@ export class BookState {
    */
   cancelTurn(): void {
     if (!this.isTurning) return;
+    const wasReverse = this.isReverseTurn;
     if (this.isReverseTurn) {
       // startReverseTurn/startReverseFanTurn decremented j — put it back
       this.j += this.fanCount;
@@ -463,5 +477,6 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    emitTelemetry('state-transition', { op: 'cancelTurn', j: this.j, phi: this.phi, isReverseTurn: wasReverse });
   }
 }

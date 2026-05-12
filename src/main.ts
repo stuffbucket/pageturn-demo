@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css'
 import { Book } from './book/Book';
 import { getVimeoVideo } from './textures/atlas';
+import { emit as emitTelemetry, installErrorReporting } from './telemetry';
 
 // ── Physics settle constants ────────────────────────────────────────────────
 const GRAVITY    = 5.0;  // progress units/s² — constant pull toward settle target
@@ -91,6 +92,16 @@ class PageTurnDemo {
   private cameraReturnProgress = 0;
 
   constructor() {
+    // Telemetry boot hook — installs error listeners and emits a boot event
+    // when the page is loaded with `?telemetry=1`.  No-op otherwise.  Kept as
+    // a single inline block so the surrounding constructor logic is untouched.
+    installErrorReporting();
+    emitTelemetry('boot', {
+      commit: (import.meta as unknown as { env?: { VITE_COMMIT?: string } }).env?.VITE_COMMIT ?? 'dev',
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+    });
+
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x12111f);
 
@@ -264,6 +275,13 @@ class PageTurnDemo {
     this.controls.enabled = false;
     this.renderer.domElement.setPointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'grabbing';
+    emitTelemetry('drag-start', {
+      dragPoint: { x: wx, y: wp.y },
+      dragProgress: 0,
+      dragVelocity: 0,
+      reverse: this.dragReverse,
+      j: this.book.getState().getStateIndex(),
+    });
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -304,6 +322,15 @@ class PageTurnDemo {
     this.lastDragTime = now;
     this.dragVelocity = elapsed > 0.001 ? (this.dragProgress - prev) / elapsed : 0;
 
+    // Telemetry: rate-limited to ~10Hz inside emit() for the 'pointer-move'
+    // type, so this is safe to call on every move event.
+    const crease = this.book.getState().getCrease();
+    emitTelemetry('pointer-move', {
+      dragPoint: { x: dragPx, y: dragPy },
+      crease: { alpha: crease.alpha, originY: crease.originOnEdge.y, dihedral: crease.dihedral },
+      dragProgress: this.dragProgress,
+    });
+
     this.updateUI();
   }
 
@@ -313,6 +340,11 @@ class PageTurnDemo {
     this.controls.enabled = true;
     this.renderer.domElement.releasePointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'default';
+    emitTelemetry('drag-end', {
+      dragProgress: this.dragProgress,
+      dragVelocity: this.dragVelocity,
+      reverse: this.dragReverse,
+    });
     // Flick detection: if velocity is fast enough, complete/cancel regardless
     // of position.  This gives responsive touch behavior on mobile.
     const FLICK_THRESHOLD = 1.5; // progress units / second
@@ -527,6 +559,7 @@ class PageTurnDemo {
       this.frameCount   = 0;
       this.lastFpsUpdate = fpsNow;
       this.updateUI();
+      emitTelemetry('fps-sample', { fps: Math.round(this.fps * 10) / 10 });
     }
 
     // Camera animation for video spread

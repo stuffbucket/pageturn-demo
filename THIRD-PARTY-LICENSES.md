@@ -2,9 +2,6 @@
 
 This project bundles or depends on the following third-party software.
 
-## piexifjs
-
-- Version: 1.0.6
-- License: MIT
-- Source: https://github.com/hMatoba/piexifjs
-- Used by: screenshot-server Vite plugin (`vite.config.ts`) for embedding EXIF metadata in capture JPEGs
+_(none currently — piexifjs was removed when the screenshot-server switched
+from JPEG+EXIF to PNG+sidecar JSON. Re-add an entry here whenever a new
+runtime or build-time dependency is introduced.)_

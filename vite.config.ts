@@ -2,17 +2,6 @@ import { defineConfig } from 'vite'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
-// piexifjs is a UMD CommonJS module — load via createRequire so the ESM Vite
-// config can still pull it in. See THIRD-PARTY-LICENSES.md for license.
-const piexif = require('piexifjs') as {
-  dump: (exif: Record<string, unknown>) => string
-  insert: (exifBytes: string, jpeg: string) => string
-  ImageIFD: Record<string, number>
-  ExifIFD: Record<string, number>
-}
 
 const TELEMETRY_LOG_PATH =
   process.env.PAGETURN_TELEMETRY_LOG ?? '/tmp/pageturn-telemetry.jsonl'
@@ -55,8 +44,8 @@ function isVec3(v: unknown): v is Vec3 {
 function validatePayload(p: unknown): { ok: true; value: ScreenshotPayload } | { ok: false; error: string } {
   if (!p || typeof p !== 'object') return { ok: false, error: 'payload is not an object' }
   const o = p as Record<string, unknown>
-  if (typeof o.imageDataUrl !== 'string' || !o.imageDataUrl.startsWith('data:image/jpeg;base64,'))
-    return { ok: false, error: 'imageDataUrl must be a "data:image/jpeg;base64,..." string' }
+  if (typeof o.imageDataUrl !== 'string' || !o.imageDataUrl.startsWith('data:image/png;base64,'))
+    return { ok: false, error: 'imageDataUrl must be a "data:image/png;base64,..." string' }
   if (typeof o.clientTimestamp !== 'string') return { ok: false, error: 'clientTimestamp must be string' }
   if (typeof o.url !== 'string') return { ok: false, error: 'url must be string' }
   if (!(o.sessionId === null || typeof o.sessionId === 'string'))
@@ -137,13 +126,6 @@ function urlSlug(rawUrl: string): string {
   return slug || 'url'
 }
 
-// EXIF DateTime field is "YYYY:MM:DD HH:MM:SS" per spec
-function exifDateTime(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getUTCFullYear()}:${pad(d.getUTCMonth() + 1)}:${pad(d.getUTCDate())} `
-    + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
-}
-
 export default defineConfig({
   server: {
     port: 5173,
@@ -221,10 +203,11 @@ export default defineConfig({
     },
     {
       // screenshot-server — receives POST /__screenshot from a browser-side
-      // long-press capture (sibling to telemetry-sink). Embeds EXIF metadata
-      // in the JPEG (incl. git short SHA in the Model tag so an agent can
-      // rewind to the captured revision) and writes both the JPEG and a
-      // sidecar JSON to contrib/screenshots/.
+      // long-press capture (sibling to telemetry-sink). Writes a PNG plus a
+      // sidecar JSON to contrib/screenshots/. PNG was chosen over JPEG for
+      // lossless debug clarity; metadata (incl. git short SHA) lives in the
+      // sidecar JSON since PNG has no native EXIF and the sidecar is the
+      // canonical machine-readable record anyway.
       name: 'screenshot-server',
       configureServer(server) {
         const gitShort = safeGit('git rev-parse --short HEAD') || 'unknown'
@@ -277,13 +260,16 @@ export default defineConfig({
             }
             const payload = v.value
 
-            // Decode JPEG
-            const base64 = payload.imageDataUrl.slice('data:image/jpeg;base64,'.length)
-            let jpegBuf: Buffer
+            // Decode PNG
+            const base64 = payload.imageDataUrl.slice('data:image/png;base64,'.length)
+            let pngBuf: Buffer
             try {
-              jpegBuf = Buffer.from(base64, 'base64')
-              if (jpegBuf.length < 4 || jpegBuf[0] !== 0xff || jpegBuf[1] !== 0xd8) {
-                throw new Error('not a JPEG (missing SOI marker)')
+              pngBuf = Buffer.from(base64, 'base64')
+              // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+              if (pngBuf.length < 8
+                || pngBuf[0] !== 0x89 || pngBuf[1] !== 0x50
+                || pngBuf[2] !== 0x4e || pngBuf[3] !== 0x47) {
+                throw new Error('not a PNG (missing signature)')
               }
             } catch (err) {
               res.statusCode = 400
@@ -298,66 +284,29 @@ export default defineConfig({
             const safeSession = sessionPart.replace(/[^A-Za-z0-9_-]+/g, '-')
             const tsSlug = isoSlug(serverDate.toISOString())
             const slug = urlSlug(payload.url)
-            const filename = `${safeSession}-${tsSlug}-${slug}.jpg`
+            const filename = `${safeSession}-${tsSlug}-${slug}.png`
             const outPath = path.join(SCREENSHOT_DIR, filename)
             const sidecarPath = `${outPath}.json`
             const relPath = `contrib/screenshots/${filename}`
             const relSidecar = `${relPath}.json`
 
-            // Build EXIF
-            const description =
-              `j=${payload.state.turn.j},phi=${payload.state.turn.phi},`
-              + `dihedral=${payload.state.crease.dihedral},`
-              + `sessionId=${payload.sessionId ?? 'null'}`
-
-            const userCommentJson = JSON.stringify(payload.state)
-            // EXIF UserComment requires an 8-byte character-code prefix.
-            const userComment = 'ASCII\x00\x00\x00' + userCommentJson
-
-            const exifObj: Record<string, unknown> = {
-              '0th': {
-                [piexif.ImageIFD.Make]: 'pageturn-demo',
-                [piexif.ImageIFD.Model]: gitShort,
-                [piexif.ImageIFD.Software]: 'pageturn-screenshot-server',
-                [piexif.ImageIFD.DateTime]: exifDateTime(serverDate),
-                [piexif.ImageIFD.ImageDescription]: description,
-              },
-              Exif: {
-                [piexif.ExifIFD.UserComment]: userComment,
-                [piexif.ExifIFD.DateTimeOriginal]: exifDateTime(new Date(payload.clientTimestamp)),
-              },
-            }
-
-            let outBuf: Buffer
-            try {
-              const exifBytes = piexif.dump(exifObj)
-              const jpegBinary = jpegBuf.toString('binary')
-              const newBinary = piexif.insert(exifBytes, jpegBinary)
-              outBuf = Buffer.from(newBinary, 'binary')
-            } catch (err) {
-              server.config.logger.warn(
-                `[screenshot-server] EXIF embed failed (${(err as Error).message}); writing raw JPEG`,
-              )
-              outBuf = jpegBuf
-            }
-
             const sidecar = {
               ...payload,
               // Drop the giant base64 from the sidecar; it's already on disk
-              // as <filename>.jpg. Keep a pointer back to the image instead.
+              // as <filename>.png. Keep a pointer back to the image instead.
               imageDataUrl: undefined,
               imageFile: relPath,
               server: {
                 receivedAt: serverDate.toISOString(),
-                git_commit: gitShort,
-                git_commit_full: gitFull,
+                git_commit: gitFull,
+                git_commit_short: gitShort,
                 git_branch: gitBranch,
                 git_dirty: safeGit('git status --porcelain').length > 0,
               },
             }
 
             try {
-              await fs.promises.writeFile(outPath, outBuf)
+              await fs.promises.writeFile(outPath, pngBuf)
               await fs.promises.writeFile(sidecarPath, JSON.stringify(sidecar, null, 2))
             } catch (err) {
               res.statusCode = 500

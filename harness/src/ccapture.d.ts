@@ -39,6 +39,7 @@ export type Assertion =
   | PixelLumaAssertion
   | PixelMaxLumaAssertion
   | PixelVarianceAssertion
+  | PixelEdgeTransitionsAssertion
   | TrajectoryAssertion;
 
 /**
@@ -117,6 +118,35 @@ export interface PixelVarianceAssertion {
   atT: number;
   region: { x: number; y: number; w: number; h: number };
   maxMeanAdjacentDelta: number;
+  description?: string;
+}
+
+/**
+ * Take a screenshot at scenario time `atT`, then count adjacent-pixel
+ * luma transitions exceeding `lumaDeltaThreshold` along `axis` ('h' for
+ * horizontal pairs, 'v' for vertical pairs). Assert the total over the
+ * region is within `[minTransitions, maxTransitions]` (either bound is
+ * optional).
+ *
+ * Use `maxTransitions` when smooth surfaces are expected — a sawtooth /
+ * houndstooth boundary inflates the count.  Use `minTransitions` when a
+ * regression flattens a sharp boundary into chunky blobs — the per-vertex
+ * z-fighting fixed by PR #33 produces FEWER crisp edges in the harness'
+ * SwiftShader render than the smoothstep-blended fix does, so the
+ * regression detector for that bug is a `minTransitions` bound.
+ */
+export interface PixelEdgeTransitionsAssertion {
+  type: 'pixel-edge-transitions';
+  atT: number;
+  region: { x: number; y: number; w: number; h: number };
+  /** Adjacent-pixel luma delta to count as an "edge transition" (0..255). */
+  lumaDeltaThreshold: number;
+  /** Maximum total transitions over the entire region (optional). */
+  maxTransitions?: number;
+  /** Minimum total transitions over the entire region (optional). */
+  minTransitions?: number;
+  /** 'h' = walk left→right within each row; 'v' = walk top→bottom within each col. */
+  axis: 'h' | 'v';
   description?: string;
 }
 

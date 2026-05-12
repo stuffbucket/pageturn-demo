@@ -58,6 +58,8 @@ export async function evaluate(
       return evalPixelMaxLuma(ctx, assertion, desc);
     case 'pixel-max-variance':
       return evalPixelVariance(ctx, assertion, desc);
+    case 'pixel-edge-transitions':
+      return evalPixelEdgeTransitions(ctx, assertion, desc);
     case 'trajectory':
       return evalTrajectory(ctx, assertion, desc);
   }
@@ -311,6 +313,63 @@ function evalPixelVariance(
     type: a.type,
     description: desc,
     detail: `mean adjacent luma Δ=${mean.toFixed(2)} (threshold<=${a.maxMeanAdjacentDelta}, ${pairs} pixel pairs sampled)`,
+  };
+}
+
+// ── Edge transitions ───────────────────────────────────────────────────────
+//
+// Counts adjacent-pixel pairs whose luma differs by more than a threshold.
+// Smooth boundaries produce one transition per row (or column) where the
+// silhouette crosses the sweep line. A houndstooth/sawtooth boundary
+// produced by per-vertex classifier z-fighting introduces many extra
+// zig-zag transitions. The pre-fix bug from PR #33 inflated this count by
+// roughly 5–10x; the threshold is set generously to allow legitimate
+// content variation while still failing on the houndstooth pattern.
+function evalPixelEdgeTransitions(
+  ctx: AssertionContext,
+  a: Extract<Assertion, { type: 'pixel-edge-transitions' }>,
+  desc: string,
+): AssertionResult {
+  const buf = ctx.screenshots.get(a.atT);
+  if (!buf) {
+    return { ok: false, type: a.type, description: desc, detail: `no screenshot for atT=${a.atT}` };
+  }
+  const rgba = unpackRGBA(buf);
+  const { x0, y0, x1, y1 } = regionPixels(rgba, a.region);
+  let transitions = 0;
+  if (a.axis === 'h') {
+    for (let y = y0; y < y1; y++) {
+      let prevL = -1;
+      for (let x = x0; x < x1; x++) {
+        const i = (y * rgba.width + x) * 4;
+        const L = luma(rgba.data[i], rgba.data[i + 1], rgba.data[i + 2]);
+        if (prevL >= 0 && Math.abs(L - prevL) > a.lumaDeltaThreshold) transitions++;
+        prevL = L;
+      }
+    }
+  } else {
+    for (let x = x0; x < x1; x++) {
+      let prevL = -1;
+      for (let y = y0; y < y1; y++) {
+        const i = (y * rgba.width + x) * 4;
+        const L = luma(rgba.data[i], rgba.data[i + 1], rgba.data[i + 2]);
+        if (prevL >= 0 && Math.abs(L - prevL) > a.lumaDeltaThreshold) transitions++;
+        prevL = L;
+      }
+    }
+  }
+  const okMax = a.maxTransitions === undefined || transitions <= a.maxTransitions;
+  const okMin = a.minTransitions === undefined || transitions >= a.minTransitions;
+  const ok = okMax && okMin;
+  const bounds = [
+    a.minTransitions !== undefined ? `>=${a.minTransitions}` : null,
+    a.maxTransitions !== undefined ? `<=${a.maxTransitions}` : null,
+  ].filter(Boolean).join(' and ');
+  return {
+    ok,
+    type: a.type,
+    description: desc,
+    detail: `axis=${a.axis} transitions=${transitions} (need ${bounds || '(no bound)'}, region=${x1 - x0}x${y1 - y0}px @ ${x0},${y0}, lumaΔ>${a.lumaDeltaThreshold})`,
   };
 }
 

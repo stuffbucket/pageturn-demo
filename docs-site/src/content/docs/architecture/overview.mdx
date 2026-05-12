@@ -1,0 +1,97 @@
+---
+title: Architecture overview
+description: Layer-by-layer tour of the pageturn-demo renderer — state machine, mesh lifecycle, scene plumbing, content textures.
+---
+
+import { Image } from 'astro:assets';
+import cornerPeel from '../../../assets/screenshots/corner-peel-28.png';
+import spineTear26 from '../../../assets/screenshots/spine-tear-26.png';
+import bleedThrough30 from '../../../assets/screenshots/bleed-through-30.png';
+
+`pageturn-demo` is an interactive 3D book built with Three.js that simulates realistic page turns with physics-based curl and settlement. The codebase is split into four cleanly separated layers.
+
+## Separation of concerns
+
+| Layer | File | Responsibility |
+|-------|------|----------------|
+| **State** | `src/book/BookState.ts` | Pure state machine — no Three.js imports |
+| **Rendering** | `src/book/Book.ts` | Mesh lifecycle, shaders, animations |
+| **Scene** | `src/main.ts` | Camera, input, physics settle, animation loop |
+| **Content** | `src/textures/atlas.ts` | Procedural canvas texture generation |
+
+:::tip[Test the seams]
+Bugs almost always live at the seams: `BookState` ↔ `Book` ↔ `main.ts` ↔ GPU. The unit suite is dense around pure logic but thin against observable rendered output — see the [test suite audit](/pageturn-demo/testing/test-suite-audit/) for which assertions actually catch breakage.
+:::
+
+## BookState — the state machine
+
+`j` is the discrete "spread index":
+
+- `j = -1` — before front cover
+- `j ∈ {0 … n}` — interior spreads
+- `j = n + 1` — after back cover
+
+`φ` is the current rotation angle in `[0, π]` during a turn.
+
+Methods (`startTurn`, `completeTurn`, `cancelTurn`, etc.) are **pure** and fully unit-tested — keep them that way. `maxFanCount()` uses a friction-coupling impulse model; covers are weighted heavier so they naturally stop fan propagation without special-casing.
+
+## Book — three-mesh rendering model
+
+Two static spread meshes always show the resting state. During an animation, a third `turningPageMesh` is spawned. **This atomicity prevents z-fighting and simplifies abort/cancel logic.** Fan turns spawn multiple staggered pages with delays. The crease shadow (tight Gaussian along spine) is a separate mesh that fades with turn progress.
+
+### The corner-peel that works
+
+A correctly-tilted crease at peak dihedral. The fiducial dot grid (enabled with `?fiducials=1`) lets you eyeball whether the surface is preserving distances:
+
+<Image src={cornerPeel} alt="Mid-drag corner peel with the fiducial grid visible — the crease is tilted, the curl is gravity-biased toward the free edge." />
+
+### Failure modes the harness has caught
+
+The spine-tear regression (fixed in PR #10) — the spine column visibly separated from the binding under a corner-peel diagonal drag because a single GLSL classifier line in `FLIP_VERT` was off:
+
+<Image src={spineTear26} alt="Pre-fix screenshot showing the spine column separating from the binding mid-drag." />
+
+The bleed-through regression (fixed in PR #12) — the rasterized turning page revealed pixels from the spread underneath at `dihedral ≈ π/2`, eventually traced to z-fighting that needed a polygon-offset constant:
+
+<Image src={bleedThrough30} alt="Pre-fix screenshot showing content from the next spread bleeding through the turning page near the half-way angle." />
+
+:::caution[Why these bugs shipped]
+Both fixes were merged on "I clicked and it worked" plus 176 passing pure-logic tests. Neither bug was visible to a JS-side test — both are pixel-level rendering pathologies. Hence the headless harness in `harness/`. Read more in [Test suite audit &sect; coverage gaps](/pageturn-demo/testing/test-suite-audit/).
+:::
+
+## Vertex shader
+
+The active shader is the inline `FLIP_VERT` constant in `Book.ts`:
+
+```glsl
+φ(t) = uAngle + uBendAmount * t * sin(2.0 * uAngle)
+```
+
+`t ∈ [0, 1]` is normalized distance from the spine; the `sin(2φ)` envelope produces gravity-based free-edge lag. `uBendAmount` is `0.4` — the constraint `A < 0.5` ensures the edge velocity never reverses.
+
+The legacy `src/shaders/page.vert` and `page.frag` are **unused** — they were the previous cylinder-wrap shader path.
+
+The proposed replacement (a true rigid-rotation + cylindrical-curl decomposition that preserves geodesic distances) is specified in the [page model PRD](/pageturn-demo/design/page-model/).
+
+## Physics settle (main.ts)
+
+On drag-end, an energy-based ODE runs in rAF until convergence:
+
+```
+v̇ = dir · G − D · v       (G = 5.0, D = 6.5)
+```
+
+Terminates when `½v² + G·|p − target| < 0.005`.
+
+The proposed aerodynamic upgrade (continued curl evolution, `b̈` puff term, CoG-driven initial direction) is in the [settle physics PRD](/pageturn-demo/design/settle-physics/).
+
+## Texture management (atlas.ts)
+
+`generateBookTextures()` creates 1024×1024 canvas textures for all content. `TexturePool.retainWindow()` evicts GPU textures for spreads far from the current page. Video spreads use dual canvas textures updated every rAF via `drawImage`. All textures use linear filtering + sRGB color space.
+
+## Where to read next
+
+- [Tilted-crease model](/pageturn-demo/architecture/tilted-crease-model/) — the math under `CreaseGeometry.ts`.
+- [Spine constraint](/pageturn-demo/architecture/spine-constraint/) — why the spine column has to stay pinned.
+- [Long-press capture pipeline](/pageturn-demo/architecture/long-press-capture-pipeline/) — the screenshot + sidecar JSON path.
+- [Telemetry pipeline](/pageturn-demo/architecture/telemetry-pipeline/) — the JSONL event stream.

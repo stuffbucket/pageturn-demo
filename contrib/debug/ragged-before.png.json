@@ -1,0 +1,63 @@
+{
+  "clientTimestamp": "2026-05-12T22:19:46.464Z",
+  "url": "http://localhost:5174/?capture=1&debug=1",
+  "sessionId": null,
+  "triggerLocation": {
+    "x": 834.5625,
+    "y": 864.25
+  },
+  "state": {
+    "drag": {
+      "isDragging": true,
+      "dragPoint": {
+        "x": -1.0554228375383834,
+        "y": 0.02514758378163462
+      },
+      "dragProgress": 0,
+      "dragVelocity": 0
+    },
+    "crease": {
+      "alpha": 4.395150168986392,
+      "originY": 0.2643987051481331,
+      "dihedral": 3.141592653589793,
+      "creaseDir": {
+        "x": -0.3119443467773611,
+        "y": 0.950100376020158
+      },
+      "cornerDir": {
+        "x": 0.950100376020158,
+        "y": 0.3119443467773611
+      }
+    },
+    "turn": {
+      "j": -1,
+      "phi": 3.141592653589793,
+      "progress": 0,
+      "isTurning": true,
+      "isReverse": true,
+      "settling": false,
+      "settleTarget": 1
+    },
+    "camera": {
+      "position": {
+        "x": 0,
+        "y": 0.6000000000000001,
+        "z": 2.6
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "fps": 60
+  },
+  "imageFile": "contrib/screenshots/anon-2026-05-12T22-19-46-475Z-localhost-5174-capture-1-debug-1.png",
+  "server": {
+    "receivedAt": "2026-05-12T22:19:46.475Z",
+    "git_commit": "918af296f1845e0d057531bfedc35cf7ea696500",
+    "git_commit_short": "918af29",
+    "git_branch": "main",
+    "git_dirty": true
+  }
+}

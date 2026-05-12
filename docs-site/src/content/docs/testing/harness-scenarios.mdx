@@ -1,0 +1,74 @@
+---
+title: Harness scenarios
+description: Headless Playwright + CCapture.js rig for fiducial-trajectory regression — what scenarios exist, how to add one, and what assertions ride on each.
+---
+
+The headless harness lives in `harness/` and drives the dev build through Playwright with CCapture.js stitching frames to a deterministic recording. Per-scenario JSON dumps fiducial-marker positions over time, which is the primary signal for shader / settle / model regressions.
+
+## Pipeline
+
+```
+harness/
+  bootstrap.ts              Test harness entry — boots the page with deterministic seeds
+  scenarios/                One file per scripted interaction
+  baselines/<model>/        Recorded fiducial trajectories per scenario
+  Dockerfile + compose      Reproducible browser+driver pin
+  npm run capture -- <name> Convenience runner
+```
+
+The harness re-uses the production browser code (no separate render path) — it just scripts the input. Output is a `<scenario>.json` file with one frame entry per captured frame:
+
+```json
+{
+  "scenario": "slow-diagonal-drag",
+  "model": "sin2phi",
+  "git_sha": "b524e50",
+  "captured_at": "2026-05-12T14:18:42.000Z",
+  "frames": [
+    { "t_ms": 0,   "fiducials": [{ "id": "f00", "x": -0.42, "y":  0.31, "z": 0.00 }, /* … 34 more … */ ] },
+    { "t_ms": 16,  "fiducials": [{ "id": "f00", "x": -0.42, "y":  0.31, "z": 0.00 }, /* … */ ] },
+    /* … */
+  ]
+}
+```
+
+35 fiducials = a 5×7 grid at known UVs (defined in `src/textures/atlas.ts`). The dot grid can be rendered visually with `?fiducials=1` for screenshot debugging.
+
+## Scenarios shipped today
+
+| Scenario | Drag pattern | Primary signal |
+|---|---|---|
+| `slow-diagonal-drag` | bottom-right corner toward spine, ~800ms | basic curl trajectory |
+| `horizontal-pull` | bottom-right toward spine on horizontal line | longest-running scenario; used for FPS budget |
+| `corner-peel` | shallow-angle pull from corner | spine-pin invariant (PR #10) |
+| `shallow-flick` | short drag with high release velocity | settle direction (FR-3.2) |
+| (deferred) `release-steep`, `release-shallow-flick` | per the [settle physics PRD](/pageturn-demo/design/settle-physics/) | aero settle (`b̈` puff) |
+
+## Assertions
+
+The runner consumes a per-scenario `assertions[]` that asserts on the captured trajectory. Examples:
+
+- **Spine pin invariant.** For every frame, fiducials whose UV places them in the spine column have `x` within 1% of pageWidth of the spine. (Catches PR #10.)
+- **No bleed-through.** At frames where `dihedral ≈ π/2`, the rasterized turning page must not contain pixels from the underlying spread. (Catches PR #12.)
+- **Inextensibility (FR-P1).** For all 595 fiducial pairs not straddling the crease exemption zone, frame-to-rest pairwise-distance ratio is in `[0.99, 1.01]`. (Validates the proposed [page model](/pageturn-demo/design/page-model/).)
+- **FPS budget.** p95 frame time on `horizontal-pull` must not regress > 1ms vs the prior baseline.
+
+## Adding a scenario
+
+1. Create `harness/scenarios/<name>.ts` exporting an interaction script (input timeline + assertion list).
+2. Run `cd harness && npm run capture -- <name>` to record the baseline.
+3. Commit `harness/baselines/<model>/<name>.json` alongside the scenario.
+4. CI re-runs the scenario on every PR; any frame-level diff outside the assertion tolerances fails the build.
+
+See [`harness/baselines/README.md`](https://github.com/stuffbucket/pageturn-demo/blob/main/harness/baselines/README.md) for the per-baseline layout.
+
+## Why the harness exists at all
+
+The unit suite (`src/**/*.test.ts`) is dense around pure logic but very thin against observable rendered output. The [test suite audit](/pageturn-demo/testing/test-suite-audit/) flagged that the spine-tear (PR #10), bleed-through (PR #12), and `hardCancelDrag` (PR #13) bugs all shipped to `main` despite 176 passing unit tests — none of which exercised the affected code paths. The harness fills that seam.
+
+## Cross-references
+
+- [Inner-loop debugging](/pageturn-demo/get-started/inner-loop-debugging/) — the four-feedback-stream model the harness sits inside.
+- [Long-press capture pipeline](/pageturn-demo/architecture/long-press-capture-pipeline/) — the cheap-and-fast cousin to harness scenarios.
+- [Page model PRD](/pageturn-demo/design/page-model/) — the `developable/` baseline directory it'll grow into.
+- [Settle physics PRD](/pageturn-demo/design/settle-physics/) — the `settle-aero/` baseline directory deferred until the model lands.

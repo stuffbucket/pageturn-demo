@@ -32,7 +32,8 @@ harness/output/
 
 # Screenshot captures from the screenshot-server Vite plugin
 # (POST /__screenshot). Use `git add -f` to keep specific captures.
-contrib/screenshots/
+contrib/screenshots/*
+!contrib/screenshots/.gitkeep
 
 # Mutation testing outputs
 reports/
@@ -40,3 +41,14 @@ reports/
 
 # Per-developer state for scripts/test-mutation-if-changed.sh
 .stryker-last-run
+
+# Starlight docs site build artifacts
+docs-site/node_modules
+docs-site/dist
+docs-site/.astro
+
+# Per-developer build-goal annotation surfaced via the build-info Vite plugin
+# (vite.config.ts). Free-form one-liner describing what the current dev
+# server is for; read at server-start and exposed via `virtual:build-info`
+# / GET /__build-info. Per-developer scratch — don't commit.
+.build-goal

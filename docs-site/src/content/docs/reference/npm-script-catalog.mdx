@@ -1,0 +1,45 @@
+---
+title: npm script catalog
+description: Every npm run script in the repo and what it does.
+---
+
+A complete listing of the scripts exposed in the root `package.json`, plus the docs-site scripts added by this site.
+
+## Application scripts
+
+| Script | Command | What it does |
+|---|---|---|
+| `npm run dev` | `vite` | Starts the dev server at `http://localhost:5173`. Hot-reloads on save. Mounts the `screenshot-server` and `telemetry-server` Vite plugins. |
+| `npm run build` | `tsc && vite build` | Type-checks the whole project, then builds a production bundle into `dist/`. |
+| `npm run preview` | `vite preview` | Serves the previously-built `dist/` for smoke-testing the production bundle. |
+
+## Test scripts
+
+| Script | Command | What it does |
+|---|---|---|
+| `npm test` | `vitest` | Runs the full Vitest suite in watch mode. Use `npm test -- --run` for a single non-watching pass. |
+| `npm test -- --run <file>` | `vitest --run <file>` | Runs a single test file once. Example: `npm test -- --run src/book/BookState.test.ts`. |
+| `npm run test:ui` | `vitest --ui` | Opens the Vitest UI in a browser for drill-down inspection. |
+| `npm run test:coverage` | `vitest --coverage` | Generates a coverage report under `coverage/`. |
+| `npm run test:mutation` | `stryker run` | Runs the StrykerJS mutation suite. ~2 minutes. Requires `npm test` to be green. See [Mutation testing](/pageturn-demo/testing/mutation-testing/). |
+| `npm run test:mutation:if-changed` | `bash scripts/test-mutation-if-changed.sh` | Conditionally runs mutation tests only if `src/` has changed since the last green run. See [Mutation policy](/pageturn-demo/testing/mutation-policy/). |
+
+## Docs-site scripts (added by this PR)
+
+| Script | Command | What it does |
+|---|---|---|
+| `npm run docs:dev` | `cd docs-site && npm run dev` | Starts the Starlight dev server at `http://localhost:4321/pageturn-demo/`. |
+| `npm run docs:build` | `cd docs-site && npm run build` | Type-checks and builds the docs site into `docs-site/dist/`. |
+| `npm run docs:preview` | `cd docs-site && npm run preview` | Serves the built docs locally for a final smoke test before push. |
+
+## Harness scripts (run from `harness/`)
+
+| Script | Where | What it does |
+|---|---|---|
+| `npm run capture -- <scenario>` | `harness/` | Headless Playwright + CCapture.js capture for the named scenario. Writes `harness/baselines/<model>/<scenario>.json`. See [Harness scenarios](/pageturn-demo/testing/harness-scenarios/). |
+
+## Notes
+
+- No linter / formatter is configured at the root (no ESLint, no Prettier).
+- The Stryker `mutate` set is in `stryker.conf.json`. `Book.ts` is excluded pending issue #20 — see [Mutation policy](/pageturn-demo/testing/mutation-policy/).
+- The docs site has its own `package.json` and `node_modules`. Root scripts simply `cd` into it.

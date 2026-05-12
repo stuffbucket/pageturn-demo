@@ -1,0 +1,47 @@
+---
+title: URL flag matrix
+description: Every query parameter the dev server understands and what it turns on.
+---
+
+The dev server accepts a number of URL query flags that toggle debugging, instrumentation, and capture pipelines. They compose freely — combine them as needed.
+
+| Flag | Default | Effect | Where it's read |
+|---|---|---|---|
+| `debug=1` | off | Top-left HUD overlay: spread index `j`, dihedral `φ`, originY, settle phase, fan count. | `src/debug.ts` |
+| `fiducials=1` | off | Renders the 5×7 dot grid into the page texture. Visualizes inextensibility violations and curl-axis errors. | `src/textures/atlas.ts` |
+| `telemetry=1` | off | Posts every state-change event to `POST /__telemetry`; written to `/tmp/pageturn-telemetry.jsonl`. See [Telemetry pipeline](/pageturn-demo/architecture/telemetry-pipeline/). | `src/telemetry.ts` + `vite.config.ts` plugin |
+| `capture=1` | off | Enables long-press (≥5s) screenshot capture. Writes PNG + sidecar JSON to `contrib/screenshots/`. See [Long-press capture pipeline](/pageturn-demo/architecture/long-press-capture-pipeline/). | `src/long-press-capture.ts` + `vite.config.ts` plugin |
+| `session=<name>` | `default` | Names the capture session. Files land as `contrib/screenshots/<name>-<n>.png[.json]`. Use to keep multi-bug captures separate. | `src/long-press-capture.ts` |
+
+## Common combinations
+
+**Full debugging, single bug session:**
+
+```text
+http://localhost:5173/?debug=1&fiducials=1&telemetry=1&capture=1&session=corner-tear
+```
+
+**Just the HUD, no captures:**
+
+```text
+http://localhost:5173/?debug=1
+```
+
+**Headless harness mode (used by Playwright):**
+
+```text
+http://localhost:5173/?fiducials=1&telemetry=1
+```
+
+The harness disables `capture=1` (it manages its own frame capture via CCapture.js) and disables `debug=1` (it reads state via the telemetry stream rather than parsing the HUD).
+
+## Notes
+
+- Flags are read once at page load. Toggling a flag mid-session requires a reload.
+- `capture=1` requires `preserveDrawingBuffer: true` on the WebGL context (PR #17). The page sets this automatically when the flag is present.
+- `telemetry=1` writes to a hard-coded path (`/tmp/pageturn-telemetry.jsonl`). On Windows you'll want to map `%TMP%` in `vite.config.ts`.
+
+## See also
+
+- [Inner-loop debugging](/pageturn-demo/get-started/inner-loop-debugging/) — when to reach for each flag in a real bug investigation.
+- [npm script catalog](/pageturn-demo/reference/npm-script-catalog/) — the script names that wrap these flags up.

@@ -11,7 +11,10 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "test:mutation": "stryker run",
-    "test:mutation:if-changed": "bash scripts/test-mutation-if-changed.sh"
+    "test:mutation:if-changed": "bash scripts/test-mutation-if-changed.sh",
+    "docs:dev": "cd docs-site && npm run dev",
+    "docs:build": "cd docs-site && npm run build",
+    "docs:preview": "cd docs-site && npm run preview"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

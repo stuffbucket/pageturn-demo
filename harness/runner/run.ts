@@ -25,6 +25,7 @@ import type {
   PixelLumaAssertion,
   PixelMaxLumaAssertion,
   PixelVarianceAssertion,
+  PixelEdgeTransitionsAssertion,
 } from '../src/ccapture.js';
 import { evaluate as evalAssertion, AssertionContext } from './assertions.js';
 

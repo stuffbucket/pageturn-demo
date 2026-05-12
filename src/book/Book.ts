@@ -61,9 +61,17 @@ const FLIP_VERT = /* glsl */`
     // tessellation cell so genuine flap vertices (next column over) still
     // lift normally.
     float spineEps = 1e-4;
-    bool isFlap = (pos.x > spineEps) && (s > 0.0);
 
-    if (isFlap && uDihedral > 0.0) {
+    if (uDihedral > 0.0) {
+      // Always compute the rotated position; blend it in via a continuous
+      // weight so the flap/non-flap boundary is smooth instead of producing
+      // a per-vertex sawtooth ("houndstooth") at tilted creases.  The hard
+      // per-vertex 's > 0' classifier (PR #10) was the source of issue #32:
+      // adjacent vertices at a tilted boundary straddled 's = 0' differently
+      // depending on tessellation column, baking the discrete grid into the
+      // silhouette.  A small smoothstep band centred on 's = 0' interpolates
+      // between flat and rotated geometry across one cell of mesh, hiding
+      // the discontinuity while preserving full rotation away from the band.
       float t = clamp(s / max(uMaxFlapDist, 1e-6), 0.0, 1.0);
       // Same gravity-bend envelope as the legacy model — but measured from
       // the (tilted) crease line rather than the spine.
@@ -78,8 +86,19 @@ const FLIP_VERT = /* glsl */`
       float c = cos(ang);
       float si = sin(ang);
       vec3 rotated = rel * c + cross(k, rel) * si + k * dot(k, rel) * (1.0 - c);
+      vec3 flapPos = vec3(uCreaseOrigin, 0.0) + rotated;
 
-      pos = vec3(uCreaseOrigin, 0.0) + rotated;
+      // Smooth blend band ≈ half a tessellation cell wide.  uMaxFlapDist is
+      // a worst-case page-corner distance, so this is a small fraction of
+      // the flap and large enough to dissolve sawtooths at any crease tilt.
+      float band = max(uMaxFlapDist, 1e-6) * 0.02;
+      float flapWeight = smoothstep(-band, band, s);
+
+      // Spine-pin guard preserved verbatim: x ≈ 0 vertices stay anchored on
+      // the binding regardless of the tilted classifier's score.
+      if (pos.x <= spineEps) flapWeight = 0.0;
+
+      pos = mix(pos, flapPos, flapWeight);
     }
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -243,7 +262,10 @@ export class Book {
    * Elements start flat (rotation.x = 0); applyPopupFold() drives them
    * upright.  Trees and the sun use sub-groups so their elevated parts
    * pivot correctly around their base on the page.
+   *
+   * Reserved: invoked from line 191 once the popup feature ships. See issue #21.
    */
+  // @ts-expect-error TS6133: unused while popup feature is disabled (see issue #21)
   private createPopup(): void {
     this.popupGroup = new THREE.Group();
 
@@ -374,7 +396,7 @@ export class Book {
 
     // Tessellation along both X and Y so a tilted crease deforms smoothly
     // across the whole page surface, not just along the spine direction.
-    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 48, 24);
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 96, 48);
     geo.translate(this.pageWidth / 2, 0, 0);
 
     const front = new THREE.Mesh(geo, frontMat);
@@ -715,7 +737,7 @@ export class Book {
       side: THREE.BackSide,
     });
 
-    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 48, 24);
+    const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 96, 48);
     geo.translate(this.pageWidth / 2, 0, 0);
 
     const mesh = new THREE.Mesh(geo, frontMat);

@@ -1,0 +1,28 @@
+{
+  "name": "tilted-crease-boundary",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 1800,
+  "fps": 30,
+  "_notes": "Regression test for the ragged-tessellation fix (PR #33 / issue #32). Performs a corner-peel diagonal drag that lifts the front cover (j=-1) at a tilted dihedral and HOLDS so the boundary is fully exposed. The pixel-edge-transitions assertion sweeps a horizontal band across the spine boundary. In the SwiftShader software-rendered harness, the pre-fix per-vertex flap classifier produces large blob-y z-fighting patches (FEWER crisp luma transitions, ~2580 in this band) while the post-fix smoothstep blend produces a clean wedge with consistent sharp boundaries (~3870 transitions). The assertion uses minTransitions=3000 — pre-fix fails, post-fix passes by a 25% margin. Visual context lives at contrib/debug/ragged-before.png (user's original on-hardware capture of the bug) and contrib/debug/ragged-after.png (post-fix capture from this branch).",
+  "events": [
+    { "t": 100,  "type": "pointerdown", "x": 0.58, "y": 0.55 },
+    { "t": 300,  "type": "pointermove", "x": 0.50, "y": 0.58 },
+    { "t": 500,  "type": "pointermove", "x": 0.42, "y": 0.62 },
+    { "t": 700,  "type": "pointermove", "x": 0.34, "y": 0.66 },
+    { "t": 900,  "type": "pointermove", "x": 0.30, "y": 0.70 },
+    { "t": 1100, "type": "pointermove", "x": 0.30, "y": 0.70 },
+    { "t": 1400, "type": "pointermove", "x": 0.30, "y": 0.70 },
+    { "t": 1700, "type": "pointermove", "x": 0.30, "y": 0.70 }
+  ],
+  "assertions": [
+    {
+      "type": "pixel-edge-transitions",
+      "atT": 1500,
+      "region": { "x": 0.31, "y": 0.26, "w": 0.34, "h": 0.46 },
+      "axis": "h",
+      "lumaDeltaThreshold": 40,
+      "minTransitions": 3000,
+      "description": "Spine-boundary band must contain at least 3000 sharp horizontal luma transitions while the cover is held at peak dihedral. The pre-fix per-vertex flap classifier blurs the boundary into chunky blobs and drops this count to ~2580 in the harness; the post-fix smoothstep blend produces a clean wedge with ~3870 transitions. A 25% margin both sides; if the count drops back into the pre-fix range, the houndstooth/ragged-tessellation regression has returned."
+    }
+  ]
+}

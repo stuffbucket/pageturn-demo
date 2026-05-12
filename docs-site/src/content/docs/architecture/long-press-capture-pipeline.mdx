@@ -1,0 +1,102 @@
+---
+title: Long-press capture pipeline
+description: Press-and-hold a canvas to snapshot a single moment — the PNG, the sidecar JSON, and the EXIF metadata that ride along.
+---
+
+The long-press capture path is the highest-bandwidth, lowest-cost feedback stream. Hold the pointer on the canvas for ≥5 seconds, get back a PNG of the exact frame plus a sidecar JSON with every uniform, every state-machine field, and the short git SHA at capture time.
+
+## Pipeline shape
+
+```
+┌────────────────────────┐  POST /__screenshot   ┌─────────────────────────────┐
+│ src/long-press-capture │  PNG + sidecar JSON   │ vite.config.ts plugin       │
+│ (browser, ?capture=1)  │ ────────────────────▶ │ screenshot-server (writes   │
+│                        │                       │ contrib/screenshots/*.png   │
+│ - 5s long-press timer  │                       │ + sidecar JSON, embeds      │
+│ - canvas.toDataURL()   │                       │ EXIF in PNG via piexifjs)   │
+│ - reads BookState +    │                       └─────────────────────────────┘
+│   uniforms             │
+└────────────────────────┘
+```
+
+## Browser side: `src/long-press-capture.ts`
+
+- Registers in the **capture phase** of pointerdown (PR #16) so it runs *before* `main.ts`'s drag handler. This means the long-press timer can fire even mid-drag without `main.ts` thinking the gesture was something else.
+- Reads `canvas.toDataURL('image/png')`. Requires `preserveDrawingBuffer: true` on the WebGL context (PR #17) — otherwise the canvas pixels are gone by the time you read them.
+- Snapshots the full state object: `BookState` fields, current shader uniforms, the in-flight `phi` and `b`, the settle target if any.
+
+## Server side: Vite dev plugin in `vite.config.ts`
+
+The plugin lives at `~line 18` and `~line 174` of `vite.config.ts` (the `screenshotServer` factory and its registration in `plugins: [...]`). It:
+
+1. Validates the POST body against a JSON schema (path, mime type, sidecar shape).
+2. Sniffs the JPEG SOI / PNG signature to confirm the body is what it claims to be.
+3. Builds the EXIF blob with `piexifjs.dump()` and **injects it into the PNG via the W3C PNG 3rd Edition `eXIf` chunk** — `piexifjs` was originally chosen for JPEG insertion; we now use only `dump()` and emit the chunk ourselves.
+4. Writes `contrib/screenshots/<session>-<n>.png` and `contrib/screenshots/<session>-<n>.png.json`.
+
+## What the sidecar contains
+
+Sample (abridged) sidecar JSON written alongside a capture:
+
+```json
+{
+  "session": "corner-tear",
+  "n": 3,
+  "ts_ms_since_load": 8420,
+  "git_sha": "b524e50",
+  "url": "http://localhost:5173/?debug=1&capture=1&session=corner-tear",
+  "bookState": {
+    "j": 4,
+    "phi": 1.42,
+    "isTurning": true,
+    "isReverseTurn": false,
+    "fanCount": 0
+  },
+  "shaderUniforms": {
+    "uAngle": 1.42,
+    "uBendAmount": 0.4,
+    "creaseDir": [0.92, 0.38],
+    "originOnEdge": [0.0, 0.31],
+    "alpha": 0.39,
+    "uDihedral": 1.42
+  },
+  "settle": null,
+  "viewport": { "w": 1280, "h": 800, "dpr": 2 }
+}
+```
+
+## What the EXIF chunk contains
+
+Sample `exiftool` output on a captured PNG:
+
+```text
+$ exiftool contrib/screenshots/corner-tear-3.png
+ExifTool Version Number         : 12.92
+File Name                       : corner-tear-3.png
+File Size                       : 412 KiB
+File Type                       : PNG
+MIME Type                       : image/png
+Image Width                     : 2560
+Image Height                    : 1600
+Software                        : pageturn-demo b524e50
+User Comment                    : session=corner-tear n=3 j=4 phi=1.42
+Date/Time Original              : 2026:05:12 14:18:42-07:00
+```
+
+The duplication (sidecar + EXIF) is intentional: tools that strip sidecars can still read the EXIF, and the EXIF survives a `mv` / share.
+
+## Failure mode the audit caught
+
+There is **no unit test** for the entire pipeline (PRs #14, #15, #16, #17 all merged on "I clicked and it worked"). The [test suite audit &sect; coverage gaps](/pageturn-demo/testing/test-suite-audit/) ranks an end-to-end "hold for 5s, assert the file lands with the right sidecar" Playwright scenario at #4 of the top-5 missing tests.
+
+## Enabling
+
+```bash
+npm run dev
+# then:
+# http://localhost:5173/?capture=1&session=corner-tear
+# press-and-hold on the canvas for 5s
+ls -la contrib/screenshots/corner-tear-*
+```
+
+See the [URL flag matrix](/pageturn-demo/reference/url-flag-matrix/) for all options.

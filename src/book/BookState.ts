@@ -155,13 +155,16 @@ export class BookState {
   setDragPoint(x: number, y: number): void {
     if (!this.isTurning) return;
     this.dragPoint = { x, y };
-    const c = creaseFromDrag(this.getCorner(), this.dragPoint, {
-      x: this.pageWidth,
-      y: this.pageHeight,
-    });
-    // phi == dihedral throughout (in both forward and reverse turns); the
-    // direction of motion is determined by where the user starts and ends
-    // their drag, not by a sign flip on phi.
+    const c = creaseFromDrag(
+      this.getCorner(),
+      this.dragPoint,
+      { x: this.pageWidth, y: this.pageHeight },
+      this.isReverseTurn,
+    );
+    // phi == dihedral throughout (in both forward and reverse turns).  The
+    // dihedral mapping itself is direction-aware (forward uses a pageWidth
+    // span, reverse uses 2·pageWidth) so monotonic drag motion produces
+    // monotonic phi in both directions.
     this.phi = c.dihedral;
   }
 
@@ -173,20 +176,28 @@ export class BookState {
   /**
    * Current crease geometry.  If a 2D drag point has been set, use it
    * directly; otherwise synthesise a horizontal drag along the spine
-   * direction whose distance scales so that phi == dihedral.
+   * direction.
    *
-   * Synthesis maps phi linearly to drag distance via dist = 2·W·(phi/π).
-   * This means dihedral saturates at π once phi exceeds π/2 (drag distance W),
-   * after which the crease translates from the page midline toward the spine
-   * — a passable approximation of the "page folded flat then sliding home"
-   * motion that completes a turn.  See PR notes for known visual artifacts.
+   * Synthesis: drag.x = corner.x − pageWidth · (phi/π).  At phi=0 the drag
+   * is at the corner (no fold); at phi=π the drag is at the spine (full
+   * fold, vertical crease coincides with the spine — the legacy book-turn
+   * end state).
    */
   getCrease(): Crease {
     const corner = this.getCorner();
+    // Synthesis span matches the direction-aware dihedral mapping in
+    // creaseFromDrag: forward = pageWidth, reverse = 2·pageWidth.  This
+    // ensures synth phi → dihedral is the identity in both directions.
+    const span = this.isReverseTurn ? 2 * this.pageWidth : this.pageWidth;
     const drag: Vec2 = this.dragPoint
       ? this.dragPoint
-      : { x: corner.x - 2 * this.pageWidth * (this.phi / Math.PI), y: corner.y };
-    return creaseFromDrag(corner, drag, { x: this.pageWidth, y: this.pageHeight });
+      : { x: corner.x - span * (this.phi / Math.PI), y: corner.y };
+    return creaseFromDrag(
+      corner,
+      drag,
+      { x: this.pageWidth, y: this.pageHeight },
+      this.isReverseTurn,
+    );
   }
 
   /**

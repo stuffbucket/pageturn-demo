@@ -184,11 +184,20 @@ class PageTurnDemo {
     this.videoCreditEl.textContent = 'myshli.com/project/freight-rail';
     canvas.appendChild(this.videoCreditEl);
 
-    this.setupEventHandlers();
-    this.setupDebugUI();
     // Long-press screenshot capture — gated on `?capture=1`; module is a
     // no-op otherwise.  See src/long-press-capture.ts for the protocol.
+    //
+    // ORDERING REQUIREMENT: install BEFORE setupEventHandlers().  Both this
+    // module and setupEventHandlers() register pointer listeners in the
+    // CAPTURE phase on the same canvas element.  Capture-phase listeners on
+    // the same element fire in REGISTRATION order, and main.ts's
+    // onPointerDown calls stopImmediatePropagation() when it grabs a page —
+    // which would otherwise prevent the long-press handler from ever seeing
+    // pointerdown during a drag.  Registering long-press first guarantees it
+    // observes the event before main.ts can swallow it.
     installLongPressCapture(this.renderer.domElement, () => this.getDebugSnapshot());
+    this.setupEventHandlers();
+    this.setupDebugUI();
     this.prevTimestamp = performance.now();
     this.animate();
     window.addEventListener('resize', () => this.onWindowResize());

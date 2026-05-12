@@ -213,6 +213,12 @@ export function installLongPressCapture(
     });
   };
 
+  // All pointer listeners are registered in the CAPTURE phase as PASSIVE
+  // observers (no preventDefault, no stopPropagation).  This is required
+  // because main.ts's drag handler is also capture-phase and calls
+  // stopImmediatePropagation() when it grabs a page; if we listened in the
+  // bubble phase we'd never see pointerdown during a drag, and the hold
+  // timer would never start.  See main.ts install ordering note.
   canvas.addEventListener('pointerdown', (e: PointerEvent) => {
     if (e.button !== 0) return;
     // Start fresh — if a previous press was somehow still tracked, drop it.
@@ -227,7 +233,7 @@ export function installLongPressCapture(
     startCanvasY = e.clientY - rect.top;
 
     timerId = setTimeout(() => { void fireCapture(); }, HOLD_THRESHOLD_MS);
-  });
+  }, true);
 
   canvas.addEventListener('pointermove', (e: PointerEvent) => {
     if (!pressActive) return;
@@ -237,15 +243,15 @@ export function installLongPressCapture(
     if (dx * dx + dy * dy > MOVE_TOLERANCE_PX * MOVE_TOLERANCE_PX) {
       cancelTimer();
     }
-  });
+  }, true);
 
   const endPress = (e: PointerEvent): void => {
     if (!pressActive) return;
     if (e.pointerId !== activePointerId) return;
     resetPress();
   };
-  canvas.addEventListener('pointerup', endPress);
-  canvas.addEventListener('pointercancel', endPress);
+  canvas.addEventListener('pointerup', endPress, true);
+  canvas.addEventListener('pointercancel', endPress, true);
   // If the canvas loses pointer capture mid-hold (e.g. drag handed off to
   // another listener), treat it as press-end so we never fire after release.
   canvas.addEventListener('lostpointercapture', () => { resetPress(); });

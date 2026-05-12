@@ -1,0 +1,14 @@
+{
+  "name": "flick-and-release",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 2000,
+  "fps": 24,
+  "_notes": "Forward drag only ~40% of the way then release. Settle physics should pull the page back to closed (no commit).",
+  "events": [
+    { "t":  200, "type": "pointerdown", "x": 0.68, "y": 0.55 },
+    { "t":  400, "type": "pointermove", "x": 0.62, "y": 0.55 },
+    { "t":  600, "type": "pointermove", "x": 0.56, "y": 0.55 },
+    { "t":  800, "type": "pointermove", "x": 0.50, "y": 0.55 },
+    { "t":  900, "type": "pointerup",   "x": 0.50, "y": 0.55 }
+  ]
+}

@@ -52,6 +52,30 @@ const rad2deg = (r: number): string => fmt((r * 180) / Math.PI, 1);
 const truncate = (s: string, n: number): string =>
   s.length > n ? `${s.slice(0, Math.max(0, n - 1))}…` : s;
 
+/**
+ * Format a UTC ISO 8601 timestamp as `YYYY-MM-DD HH:MM:SS UTC` for human
+ * readability.  Returns null if the input doesn't parse.
+ */
+const formatUtcStamp = (iso: string | undefined | null): string | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number): string => n.toString().padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+  );
+};
+
+/** Absolute drift between two ISO timestamps, in whole minutes. */
+const driftMinutes = (a: string | undefined | null, b: string | undefined | null): number => {
+  if (!a || !b) return 0;
+  const ta = new Date(a).getTime();
+  const tb = new Date(b).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
+  return Math.abs(tb - ta) / 60000;
+};
+
 export class DebugHud {
   private el: HTMLDivElement;
   private body: HTMLDivElement;
@@ -174,6 +198,7 @@ export class DebugHud {
       branch: buildInfo.branch,
       dirty: buildInfo.dirty,
       pr: buildInfo.pr ? buildInfo.pr.number : null,
+      goal: buildInfo.goal ?? null,
       url: typeof window !== 'undefined' ? window.location.href : '',
     });
 
@@ -231,7 +256,7 @@ export class DebugHud {
 
     const row = (label: string, value: string, color: string): HTMLDivElement => {
       const d = document.createElement('div');
-      d.textContent = `  ${label.padEnd(10)} ${value}`;
+      d.textContent = `  ${label.padEnd(14)} ${value}`;
       d.style.color = color;
       d.style.whiteSpace = 'pre';
       return d;
@@ -241,6 +266,27 @@ export class DebugHud {
     this.buildSection.appendChild(row('commit', `${buildInfo.commitShort}${dirtyMark}`, commitColor));
     this.buildSection.appendChild(row('worktree', buildInfo.worktreeLabel, sectionColor));
     this.buildSection.appendChild(row('PR', prText, sectionColor));
+
+    // ── New: built / running-since timestamps (UTC, human-readable) ────────
+    const builtStr = formatUtcStamp(buildInfo.commitDateUtc);
+    if (builtStr) {
+      this.buildSection.appendChild(row('built', builtStr, sectionColor));
+    }
+    const startedStr = formatUtcStamp(buildInfo.serverStartedAt);
+    if (
+      builtStr &&
+      startedStr &&
+      driftMinutes(buildInfo.commitDateUtc, buildInfo.serverStartedAt) > 5
+    ) {
+      this.buildSection.appendChild(row('running since', startedStr, sectionColor));
+    }
+
+    // ── New: goal (plain-English intent) — most prominent line ─────────────
+    if (buildInfo.goal) {
+      const goalRow = row('goal', truncate(buildInfo.goal, 40), '#9bc7e8');
+      goalRow.style.fontWeight = '700';
+      this.buildSection.appendChild(goalRow);
+    }
   }
 
   setVisible(v: boolean): void {

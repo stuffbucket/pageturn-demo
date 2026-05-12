@@ -37,6 +37,7 @@ export type Assertion =
   | TelemetryAssertion
   | FileExistsAssertion
   | PixelLumaAssertion
+  | PixelMaxLumaAssertion
   | PixelVarianceAssertion
   | PixelEdgeTransitionsAssertion
   | TrajectoryAssertion;
@@ -86,6 +87,22 @@ export interface PixelLumaAssertion {
   atT: number;
   region: { x: number; y: number; w: number; h: number };
   minMeanLuma: number; // 0..255
+  description?: string;
+}
+
+/**
+ * Take a Playwright screenshot at scenario time `atT`, then assert that the
+ * mean luma of a rectangular region (in canvas-fraction coordinates, like
+ * pointer events) is at most `maxMeanLuma`. The inverse of pixel-min-luma:
+ * used to verify that a region which should NOT contain bright pixels (e.g.
+ * a back-facing surface that should render its dark back texture, not bleed
+ * through to the bright front texture) actually stays dark.
+ */
+export interface PixelMaxLumaAssertion {
+  type: 'pixel-max-luma';
+  atT: number;
+  region: { x: number; y: number; w: number; h: number };
+  maxMeanLuma: number; // 0..255
   description?: string;
 }
 

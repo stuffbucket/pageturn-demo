@@ -335,36 +335,63 @@ export class Book {
     this.group.add(this.popupGroup);
   }
 
+  /**
+   * Build the shared uniforms object for a turning-page material pair.
+   * Front and back materials share the same uniforms object so a single
+   * applyCreaseUniforms() call on the front material updates both.
+   */
+  private buildTurningUniforms(
+    frontTex: THREE.Texture,
+    backTex: THREE.Texture,
+    initialMaxFlapDist: number,
+  ): Record<string, THREE.IUniform> {
+    return {
+      frontTexture:   { value: frontTex },
+      backTexture:    { value: backTex  },
+      uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
+      uCreaseDir:     { value: new THREE.Vector2(0, 1) },
+      uCornerDir:     { value: new THREE.Vector2(1, 0) },
+      uMaxFlapDist:   { value: initialMaxFlapDist },
+      uDihedral:      { value: 0 },
+      uBendAmount:    { value: 0.4 },
+    };
+  }
+
   /** Spawn a flipping-page mesh with the tilted-crease bending shader. */
   private spawnFlipPage(
     frontTex: THREE.Texture,
     backTex: THREE.Texture,
     _startAngle: number,  // legacy: 0 = forward start, -π = reverse start (consumed implicitly via state.phi)
   ): void {
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        frontTexture:   { value: frontTex },
-        backTexture:    { value: backTex  },
-        uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
-        uCreaseDir:     { value: new THREE.Vector2(0, 1) },
-        uCornerDir:     { value: new THREE.Vector2(1, 0) },
-        uMaxFlapDist:   { value: 0 },
-        uDihedral:      { value: 0 },
-        uBendAmount:    { value: 0.4 },
-      },
+    const sharedUniforms = this.buildTurningUniforms(frontTex, backTex, 0);
+
+    // FRONT face: side=FrontSide. polygonOffset biases the front face toward
+    // the camera so it wins the depth test against the static spread when the
+    // two surfaces are nearly co-planar (PR #12 fix — protects against
+    // turning-page-vs-static-spread bleed at φ≈0 / φ≈π / shallow bend).
+    const frontMat = new THREE.ShaderMaterial({
+      uniforms:       sharedUniforms,
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
-      side: THREE.DoubleSide,
-      // Bias the turning page toward the camera in depth-buffer space so it
-      // wins the depth test against the static spread when the two surfaces
-      // are nearly co-planar (e.g. at φ≈0 / φ≈π, or where the bend envelope
-      // brings the curl close to z=0). Without this, sub-mm differences in
-      // world-space z (turning at +0.001, static at 0 / −0.001) fall below
-      // depth-buffer precision and one face's content bleeds through the
-      // other.
+      side: THREE.FrontSide,
       polygonOffset:      true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits:  -2,
+    });
+
+    // BACK face: side=BackSide (renders only triangles whose normals face away
+    // from the camera; gl_FrontFacing is false in those fragments → FLIP_FRAG
+    // samples backTexture). No polygonOffset: when the curl bends below the
+    // page horizon the back face is geometrically behind the static spread,
+    // and we want the static spread to occlude it honestly. Pulling the back
+    // face toward the camera (as the prior DoubleSide+offset arrangement did)
+    // caused the back-of-page texture to bleed through the front-of-page
+    // texture mid-fold (issue #31).
+    const backMat = new THREE.ShaderMaterial({
+      uniforms:       sharedUniforms,
+      vertexShader:   FLIP_VERT,
+      fragmentShader: FLIP_FRAG,
+      side: THREE.BackSide,
     });
 
     // Tessellation along both X and Y so a tilted crease deforms smoothly
@@ -372,13 +399,36 @@ export class Book {
     const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 96, 48);
     geo.translate(this.pageWidth / 2, 0, 0);
 
-    this.turningPageMesh = new THREE.Mesh(geo, mat);
-    this.turningPageMesh.position.z = 0.001;
-    this.group.add(this.turningPageMesh);
+    const front = new THREE.Mesh(geo, frontMat);
+    front.position.z = 0.001;
+
+    // Back mesh shares geometry and uniforms with front; added as a child so
+    // its world transform follows automatically. Local position.z = 0 keeps
+    // the two faces co-located — they never z-fight against each other
+    // because FrontSide/BackSide are mutually exclusive per triangle.
+    const back = new THREE.Mesh(geo, backMat);
+    front.add(back);
+
+    this.turningPageMesh = front;
+    this.group.add(front);
 
     // Initialise uniforms from current crease so the first rendered frame is
-    // already correctly oriented.
-    this.applyCreaseUniforms(mat, this.state.getCrease());
+    // already correctly oriented. Shared uniforms object updates both mats.
+    this.applyCreaseUniforms(frontMat, this.state.getCrease());
+  }
+
+  /**
+   * Dispose a turning-page mesh + its back-face child. Geometry is shared
+   * between the two meshes, so dispose it exactly once via the parent.
+   */
+  private disposeTurningPage(mesh: THREE.Mesh): void {
+    for (const child of mesh.children) {
+      if ((child as THREE.Mesh).isMesh) {
+        ((child as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    }
+    mesh.geometry.dispose();
+    (mesh.material as THREE.Material).dispose();
   }
 
   /**
@@ -533,8 +583,7 @@ export class Book {
   completeTurn(): void {
     if (this.turningPageMesh) {
       this.group.remove(this.turningPageMesh);
-      this.turningPageMesh.geometry.dispose();
-      (this.turningPageMesh.material as THREE.Material).dispose();
+      this.disposeTurningPage(this.turningPageMesh);
       this.turningPageMesh = null;
     }
     (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
@@ -551,8 +600,7 @@ export class Book {
   cancelTurn(): void {
     if (this.turningPageMesh) {
       this.group.remove(this.turningPageMesh);
-      this.turningPageMesh.geometry.dispose();
-      (this.turningPageMesh.material as THREE.Material).dispose();
+      this.disposeTurningPage(this.turningPageMesh);
       this.turningPageMesh = null;
     }
     (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
@@ -667,33 +715,36 @@ export class Book {
     delay: number,
     layer: number,
   ): void {
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        frontTexture:   { value: frontTex },
-        backTexture:    { value: backTex  },
-        uCreaseOrigin:  { value: new THREE.Vector2(this.pageWidth, this.pageHeight / 2) },
-        uCreaseDir:     { value: new THREE.Vector2(0, 1) },
-        uCornerDir:     { value: new THREE.Vector2(1, 0) },
-        uMaxFlapDist:   { value: this.pageWidth },
-        uDihedral:      { value: 0 },
-        uBendAmount:    { value: 0.4 },
-      },
+    const sharedUniforms = this.buildTurningUniforms(frontTex, backTex, this.pageWidth);
+
+    // Front + back face materials — same split-side strategy as spawnFlipPage
+    // (see issue #31). polygonOffset on the front face only; the back face
+    // respects depth honestly so the static spread / underlying fan layers
+    // properly occlude it when the curl bends below the page horizon.
+    const frontMat = new THREE.ShaderMaterial({
+      uniforms:       sharedUniforms,
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
-      side: THREE.DoubleSide,
-      // Same depth-bias as the single turning page (see spawnFlipPage).
-      // Each fan layer also gets a stacking offset on its position.z below.
+      side: THREE.FrontSide,
       polygonOffset:      true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits:  -2,
+    });
+    const backMat = new THREE.ShaderMaterial({
+      uniforms:       sharedUniforms,
+      vertexShader:   FLIP_VERT,
+      fragmentShader: FLIP_FRAG,
+      side: THREE.BackSide,
     });
 
     const geo = new THREE.PlaneGeometry(this.pageWidth, this.pageHeight, 96, 48);
     geo.translate(this.pageWidth / 2, 0, 0);
 
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(geo, frontMat);
     // Stack pages with slight z offsets so they don't z-fight
     mesh.position.z = 0.001 + layer * 0.002;
+    const back = new THREE.Mesh(geo, backMat);
+    mesh.add(back);
     this.group.add(mesh);
     this.fanPages.push({ mesh, delay });
   }
@@ -750,8 +801,7 @@ export class Book {
   completeFanTurn(): void {
     for (const page of this.fanPages) {
       this.group.remove(page.mesh);
-      page.mesh.geometry.dispose();
-      (page.mesh.material as THREE.Material).dispose();
+      this.disposeTurningPage(page.mesh);
     }
     this.fanPages = [];
     (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;
@@ -765,8 +815,7 @@ export class Book {
   cancelFanTurn(): void {
     for (const page of this.fanPages) {
       this.group.remove(page.mesh);
-      page.mesh.geometry.dispose();
-      (page.mesh.material as THREE.Material).dispose();
+      this.disposeTurningPage(page.mesh);
     }
     this.fanPages = [];
     (this.creaseMesh.material as THREE.ShaderMaterial).uniforms.uOpacity.value = 0;

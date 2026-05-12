@@ -54,6 +54,8 @@ export async function evaluate(
       return evalFileExists(ctx, assertion, desc);
     case 'pixel-min-luma':
       return evalPixelLuma(ctx, assertion, desc);
+    case 'pixel-max-luma':
+      return evalPixelMaxLuma(ctx, assertion, desc);
     case 'pixel-max-variance':
       return evalPixelVariance(ctx, assertion, desc);
     case 'pixel-edge-transitions':
@@ -245,6 +247,35 @@ function evalPixelLuma(
     type: a.type,
     description: desc,
     detail: `mean luma=${mean.toFixed(2)} (threshold>=${a.minMeanLuma}, region=${count}px @ ${x0},${y0} -> ${x1},${y1})`,
+  };
+}
+
+function evalPixelMaxLuma(
+  ctx: AssertionContext,
+  a: Extract<Assertion, { type: 'pixel-max-luma' }>,
+  desc: string,
+): AssertionResult {
+  const buf = ctx.screenshots.get(a.atT);
+  if (!buf) {
+    return { ok: false, type: a.type, description: desc, detail: `no screenshot for atT=${a.atT}` };
+  }
+  const rgba = unpackRGBA(buf);
+  const { x0, y0, x1, y1 } = regionPixels(rgba, a.region);
+  let sum = 0; let count = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * rgba.width + x) * 4;
+      sum += luma(rgba.data[i], rgba.data[i + 1], rgba.data[i + 2]);
+      count++;
+    }
+  }
+  const mean = count ? sum / count : 0;
+  const ok = mean <= a.maxMeanLuma;
+  return {
+    ok,
+    type: a.type,
+    description: desc,
+    detail: `mean luma=${mean.toFixed(2)} (threshold<=${a.maxMeanLuma}, region=${count}px @ ${x0},${y0} -> ${x1},${y1})`,
   };
 }
 

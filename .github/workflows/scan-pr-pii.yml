@@ -1,0 +1,32 @@
+name: Scan PR/comment for path-PII
+
+on:
+  pull_request:
+    types: [opened, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  scan:
+    name: Regex-scan for path PII
+    runs-on: ubuntu-24.04
+    # Skip self-edits the bot may make.
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - name: Checkout (for scan script)
+        uses: actions/checkout@v6
+
+      - name: Run path-PII scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/scan-path-pii.sh

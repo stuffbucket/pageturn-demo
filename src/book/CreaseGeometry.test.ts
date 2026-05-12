@@ -74,18 +74,25 @@ describe('creaseFromDrag', () => {
     expect(c.progress).toBeLessThan(1e-5);
   });
 
-  it('yields dihedral ≈ π when drag is a full pageWidth opposite the corner', () => {
-    // Distance pageWidth in any direction → dihedral saturates at π.
-    const drag: Vec2 = { x: CORNER.x - PAGE.x, y: CORNER.y };
+  it('yields dihedral ≈ π when drag is dragged to the opposite side of the spine (one page-width past it)', () => {
+    // "Full page width opposite the corner" — drag positioned a full pageWidth
+    // beyond the spine on the opposite side, distance 2·pageWidth.  Saturates.
+    const drag: Vec2 = { x: CORNER.x - 2 * PAGE.x, y: CORNER.y };
     const c = creaseFromDrag(CORNER, drag, PAGE);
     expect(c.dihedral).toBeCloseTo(Math.PI, 9);
     expect(c.progress).toBeCloseTo(1, 9);
   });
 
-  it('clamps dihedral at π for drag distance exceeding pageWidth', () => {
-    const drag: Vec2 = { x: CORNER.x - 3 * PAGE.x, y: CORNER.y };
+  it('clamps dihedral at π for drag distance exceeding 2·pageWidth', () => {
+    const drag: Vec2 = { x: CORNER.x - 5 * PAGE.x, y: CORNER.y };
     const c = creaseFromDrag(CORNER, drag, PAGE);
     expect(c.dihedral).toBeCloseTo(Math.PI, 9);
+  });
+
+  it('yields dihedral = π/2 for a one-pageWidth horizontal drag (corner reaches spine)', () => {
+    const drag: Vec2 = { x: CORNER.x - PAGE.x, y: CORNER.y };
+    const c = creaseFromDrag(CORNER, drag, PAGE);
+    expect(c.dihedral).toBeCloseTo(Math.PI / 2, 9);
   });
 });
 

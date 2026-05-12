@@ -23,10 +23,16 @@
  *   parallel to the spine — the standard book-turn case.
  *
  *   The 3D dihedral angle is not uniquely determined by the 2D drag (the same
- *   flat configuration can come from many out-of-plane fold angles).  Per the
- *   spec we map drag distance linearly to dihedral, saturating at π:
+ *   flat configuration can come from many out-of-plane fold angles).  We map
+ *   drag distance linearly to dihedral, saturating at π once the corner has
+ *   been dragged a full page-diameter (2·pageWidth) away — i.e. all the way
+ *   to the opposite side of the spine:
  *
- *       dihedral = π · clamp(|drag − corner| / pageWidth, 0, 1)
+ *       dihedral = π · clamp(|drag − corner| / (2·pageWidth), 0, 1)
+ *
+ *   With this scaling, a horizontal drag of one pageWidth (corner reaches
+ *   the spine) corresponds to dihedral = π/2, and the "fully folded over
+ *   the spine" state requires dragging another pageWidth past it.
  */
 
 export type Vec2 = { x: number; y: number };
@@ -83,7 +89,7 @@ export function creaseFromDrag(corner: Vec2, drag: Vec2, pageSize: Vec2): Crease
     y: (corner.y + drag.y) / 2,
   };
 
-  const dihedral = Math.PI * Math.min(1, dist / pageSize.x);
+  const dihedral = Math.PI * Math.min(1, dist / (2 * pageSize.x));
 
   return {
     alpha,

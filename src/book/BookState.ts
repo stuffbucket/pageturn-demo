@@ -1,6 +1,6 @@
 /**
  * BookState.ts - Discrete state machine for the book from Section 1 of the formalization
- * 
+ *
  * j in {-1, 0, 1, ..., n, n+1} tracks which spread is visible
  * -1: front cover closed
  * 0: open to first spread
@@ -8,6 +8,8 @@
  * n: open to last spread
  * n+1: back cover closed
  */
+
+import { creaseFromDrag, type Crease, type Vec2 } from './CreaseGeometry';
 
 // ── Physical material properties ─────────────────────────────────────────────
 // Impulse propagation through a stack:
@@ -116,9 +118,75 @@ export class BookState {
   private isReverseTurn: boolean = false;  // Track if current turn is reverse
   private fanCount: number = 1; // Number of leaves in current turn (1 = normal, >1 = fan)
 
+  // ── Tilted-crease (turn.js) state ──────────────────────────────────────────
+  // Drag point in page-local 2D coordinates (right-page frame: spine at x=0,
+  // free edge at x=pageWidth, top at y=+pageHeight/2).  Null means "no
+  // interactive 2D drag has been set; synthesise from phi".
+  private dragPoint: Vec2 | null = null;
+  private pageWidth: number = 1.0;
+  private pageHeight: number = 1.4;
+
   constructor(numLeaves: number) {
     this.numLeaves = numLeaves;
     this.j = -1;  // start with front cover closed
+  }
+
+  /** Inform the state machine of the page dimensions used for crease math. */
+  setPageSize(width: number, height: number): void {
+    this.pageWidth = width;
+    this.pageHeight = height;
+  }
+
+  /** Page width in world units, as last set via setPageSize. */
+  getPageWidth(): number { return this.pageWidth; }
+  /** Page height in world units, as last set via setPageSize. */
+  getPageHeight(): number { return this.pageHeight; }
+
+  /** The corner of the right-page-frame currently being "grabbed" (top-right). */
+  private getCorner(): Vec2 {
+    return { x: this.pageWidth, y: this.pageHeight / 2 };
+  }
+
+  /**
+   * Set the 2D drag point (page-local coords) — for interactive drag turns.
+   * Updates phi to match the resulting dihedral, so settle/animation code
+   * that reads getRotationAngle() / getTurningProgress() stays consistent.
+   */
+  setDragPoint(x: number, y: number): void {
+    if (!this.isTurning) return;
+    this.dragPoint = { x, y };
+    const c = creaseFromDrag(this.getCorner(), this.dragPoint, {
+      x: this.pageWidth,
+      y: this.pageHeight,
+    });
+    // phi == dihedral throughout (in both forward and reverse turns); the
+    // direction of motion is determined by where the user starts and ends
+    // their drag, not by a sign flip on phi.
+    this.phi = c.dihedral;
+  }
+
+  /** Forget any interactive 2D drag — fall back to phi-driven synthesis. */
+  clearDragPoint(): void {
+    this.dragPoint = null;
+  }
+
+  /**
+   * Current crease geometry.  If a 2D drag point has been set, use it
+   * directly; otherwise synthesise a horizontal drag along the spine
+   * direction whose distance scales so that phi == dihedral.
+   *
+   * Synthesis maps phi linearly to drag distance via dist = 2·W·(phi/π).
+   * This means dihedral saturates at π once phi exceeds π/2 (drag distance W),
+   * after which the crease translates from the page midline toward the spine
+   * — a passable approximation of the "page folded flat then sliding home"
+   * motion that completes a turn.  See PR notes for known visual artifacts.
+   */
+  getCrease(): Crease {
+    const corner = this.getCorner();
+    const drag: Vec2 = this.dragPoint
+      ? this.dragPoint
+      : { x: corner.x - 2 * this.pageWidth * (this.phi / Math.PI), y: corner.y };
+    return creaseFromDrag(corner, drag, { x: this.pageWidth, y: this.pageHeight });
   }
 
   /**
@@ -173,6 +241,8 @@ export class BookState {
       // Forward turn: phi goes 0 → π as progress goes 0 → 1
       this.phi = Math.PI * clampedProgress;
     }
+    // Hand control back to phi-driven crease synthesis (e.g. during settle).
+    this.dragPoint = null;
   }
 
   /**
@@ -187,6 +257,7 @@ export class BookState {
     this.isTurning = true;
     this.isReverseTurn = false;
     this.fanCount = 1;
+    this.dragPoint = null;
     return true;
   }
 
@@ -207,6 +278,7 @@ export class BookState {
     this.isTurning = true;
     this.isReverseTurn = true;
     this.fanCount = 1;
+    this.dragPoint = null;
     return true;
   }
 
@@ -229,6 +301,7 @@ export class BookState {
     this.isTurning = true;
     this.isReverseTurn = false;
     this.fanCount = count;
+    this.dragPoint = null;
     return true;
   }
 
@@ -252,6 +325,7 @@ export class BookState {
     this.isTurning = true;
     this.isReverseTurn = true;
     this.fanCount = count;
+    this.dragPoint = null;
     return true;
   }
 
@@ -351,6 +425,7 @@ export class BookState {
     this.isTurning = false;
     this.isReverseTurn = false;
     this.fanCount = 1;
+    this.dragPoint = null;
   }
 
   /**
@@ -367,5 +442,6 @@ export class BookState {
     this.isTurning = false;
     this.isReverseTurn = false;
     this.fanCount = 1;
+    this.dragPoint = null;
   }
 }

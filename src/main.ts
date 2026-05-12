@@ -32,7 +32,7 @@ class PageTurnDemo {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
-  private book: Book;
+  public book!: Book;
   private controls: OrbitControls;
 
   // ── Timed / button animation ──────────────────────────────────────────────
@@ -695,5 +695,11 @@ class PageTurnDemo {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  new PageTurnDemo();
+  const demo = new PageTurnDemo();
+  // Expose the book for the harness (trajectory capture mode). Always
+  // attached — guarded behind a non-typical property name to avoid clashing
+  // with user-page scripts.
+  (window as unknown as { __pageturn?: { book: Book } }).__pageturn = {
+    book: (demo as unknown as { book: Book }).book,
+  };
 });

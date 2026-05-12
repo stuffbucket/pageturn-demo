@@ -150,6 +150,14 @@ export class BookState {
   }
 
   /**
+   * True if the current turn is a reverse (backward) turn.
+   * Meaningless when isTurning is false.
+   */
+  getIsReverseTurn(): boolean {
+    return this.isReverseTurn;
+  }
+
+  /**
    * Advance the turn progress.  Updates phi only — does NOT transition
    * state.  Call completeTurn() or cancelTurn() to finalize.
    */

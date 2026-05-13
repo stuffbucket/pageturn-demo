@@ -64,7 +64,7 @@ Slack, PEM) matched anywhere.
 Before (PR #39 comment 4435638557, fragment):
 
 ```json
-"worktreePath": "/Users/brian/github/bstucker/pageturn-demo/.claude/worktrees/agent-ab31debbe766618d5",
+"worktreePath": "/Users/<user>/github/<user>/pageturn-demo/.claude/worktrees/agent-<id>",
 ```
 
 After:

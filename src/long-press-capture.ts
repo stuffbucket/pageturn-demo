@@ -27,6 +27,7 @@
  */
 
 import { emit as emitTelemetry } from './telemetry';
+import type { BuildInfo } from './build-info';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const HOLD_THRESHOLD_MS = 5000;
@@ -63,6 +64,11 @@ export interface StateSnapshot {
     target: { x: number; y: number; z: number };
   };
   fps: number;
+  /**
+   * Build provenance for the running bundle.  Optional for back-compat with
+   * sidecars produced before the virtual:build-info plugin landed.
+   */
+  build?: BuildInfo;
 }
 
 interface ScreenshotPayload {

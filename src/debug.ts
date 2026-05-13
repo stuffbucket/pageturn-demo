@@ -15,6 +15,8 @@
  */
 
 import type * as THREE from 'three';
+import QRCode from 'qrcode';
+import { buildInfo } from 'virtual:build-info';
 import type { Book } from './book/Book';
 
 /** Whether the ?debug=1 URL flag is set. */
@@ -47,9 +49,39 @@ const fmt = (n: number, p = 3): string => {
 
 const rad2deg = (r: number): string => fmt((r * 180) / Math.PI, 1);
 
+const truncate = (s: string, n: number): string =>
+  s.length > n ? `${s.slice(0, Math.max(0, n - 1))}…` : s;
+
+/**
+ * Format a UTC ISO 8601 timestamp as `YYYY-MM-DD HH:MM:SS UTC` for human
+ * readability.  Returns null if the input doesn't parse.
+ */
+const formatUtcStamp = (iso: string | undefined | null): string | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number): string => n.toString().padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+  );
+};
+
+/** Absolute drift between two ISO timestamps, in whole minutes. */
+const driftMinutes = (a: string | undefined | null, b: string | undefined | null): number => {
+  if (!a || !b) return 0;
+  const ta = new Date(a).getTime();
+  const tb = new Date(b).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
+  return Math.abs(tb - ta) / 60000;
+};
+
 export class DebugHud {
   private el: HTMLDivElement;
   private body: HTMLDivElement;
+  private buildSection: HTMLDivElement;
+  private qrToast: HTMLDivElement;
+  private qrPayload: string;
   private visible: boolean;
   private book: Book;
 
@@ -72,7 +104,7 @@ export class DebugHud {
       borderRadius: '6px',
       border: '1px solid rgba(255, 255, 255, 0.15)',
       backdropFilter: 'blur(6px)',
-      pointerEvents: 'none',
+      pointerEvents: 'auto',
       whiteSpace: 'pre',
       zIndex: '50',
       display: initialVisible ? 'block' : 'none',
@@ -87,13 +119,174 @@ export class DebugHud {
       marginBottom: '6px',
     } as Partial<CSSStyleDeclaration>);
 
+    // ── Build section (above FPS / above the live state body) ───────────────
+    const buildSection = document.createElement('div');
+    Object.assign(buildSection.style, {
+      whiteSpace: 'pre',
+      marginBottom: '8px',
+      paddingBottom: '8px',
+      borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+    } as Partial<CSSStyleDeclaration>);
+
     const body = document.createElement('div');
+
+    // ── QR row (canvas + toast) ─────────────────────────────────────────────
+    const qrWrap = document.createElement('div');
+    Object.assign(qrWrap.style, {
+      marginTop: '8px',
+      paddingTop: '8px',
+      borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    } as Partial<CSSStyleDeclaration>);
+
+    const qrCol = document.createElement('div');
+    const qrLabel = document.createElement('div');
+    qrLabel.textContent = 'scan to reproduce';
+    Object.assign(qrLabel.style, {
+      fontSize: '10px',
+      color: '#9aa6c2',
+      marginBottom: '4px',
+    } as Partial<CSSStyleDeclaration>);
+
+    const qrCanvas = document.createElement('canvas');
+    qrCanvas.width = 160;
+    qrCanvas.height = 160;
+    Object.assign(qrCanvas.style, {
+      width: '160px',
+      height: '160px',
+      cursor: 'pointer',
+      borderRadius: '3px',
+      background: '#fff',
+      display: 'block',
+    } as Partial<CSSStyleDeclaration>);
+    qrCanvas.title = 'Click to copy repro JSON';
+
+    qrCol.appendChild(qrLabel);
+    qrCol.appendChild(qrCanvas);
+
+    const qrToast = document.createElement('div');
+    qrToast.textContent = 'Copied!';
+    Object.assign(qrToast.style, {
+      color: '#7ee787',
+      fontSize: '11px',
+      opacity: '0',
+      transition: 'opacity 180ms ease',
+    } as Partial<CSSStyleDeclaration>);
+
+    qrWrap.appendChild(qrCol);
+    qrWrap.appendChild(qrToast);
+
     el.appendChild(title);
+    el.appendChild(buildSection);
     el.appendChild(body);
+    el.appendChild(qrWrap);
     document.body.appendChild(el);
 
     this.el = el;
     this.body = body;
+    this.buildSection = buildSection;
+    this.qrToast = qrToast;
+
+    // QR payload — the agent-readable repro recipe.
+    this.qrPayload = JSON.stringify({
+      v: 1,
+      kind: 'pageturn-repro',
+      repo: 'https://github.com/stuffbucket/pageturn-demo',
+      commit: buildInfo.commit,
+      branch: buildInfo.branch,
+      dirty: buildInfo.dirty,
+      pr: buildInfo.pr ? buildInfo.pr.number : null,
+      goal: buildInfo.goal ?? null,
+      url: typeof window !== 'undefined' ? window.location.href : '',
+    });
+
+    // Render Build section + QR up front (fire-and-forget).  These don't
+    // change during a session.
+    this.renderBuildSection();
+    void QRCode.toCanvas(qrCanvas, this.qrPayload, { width: 160, margin: 1 })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[debug-hud] QR render failed', err);
+      });
+
+    qrCanvas.addEventListener('click', () => {
+      void this.copyQrPayload();
+    });
+  }
+
+  private async copyQrPayload(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.qrPayload);
+      this.flashToast();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[debug-hud] clipboard write failed', err);
+    }
+  }
+
+  private flashToast(): void {
+    this.qrToast.style.opacity = '1';
+    window.setTimeout(() => {
+      this.qrToast.style.opacity = '0';
+    }, 1200);
+  }
+
+  private renderBuildSection(): void {
+    const isAgent = /^agent-/.test(buildInfo.worktreeLabel);
+    const sectionColor = isAgent ? '#d4a574' : '#d8e4ff';
+    const dirtyMark = buildInfo.dirty ? ' ✱' : '';
+    const commitColor = buildInfo.dirty ? '#d4a574' : sectionColor;
+
+    const prText = buildInfo.pr
+      ? `#${buildInfo.pr.number} ${truncate(buildInfo.pr.title, 30)}`
+      : '(none)';
+
+    // Use a small structured DOM so we can color individual lines without
+    // sacrificing the monospace alignment (whiteSpace: pre on each row).
+    this.buildSection.innerHTML = '';
+    const header = document.createElement('div');
+    header.textContent = 'Build';
+    Object.assign(header.style, {
+      color: sectionColor,
+      fontWeight: '700',
+    } as Partial<CSSStyleDeclaration>);
+    this.buildSection.appendChild(header);
+
+    const row = (label: string, value: string, color: string): HTMLDivElement => {
+      const d = document.createElement('div');
+      d.textContent = `  ${label.padEnd(14)} ${value}`;
+      d.style.color = color;
+      d.style.whiteSpace = 'pre';
+      return d;
+    };
+
+    this.buildSection.appendChild(row('branch', buildInfo.branch, sectionColor));
+    this.buildSection.appendChild(row('commit', `${buildInfo.commitShort}${dirtyMark}`, commitColor));
+    this.buildSection.appendChild(row('worktree', buildInfo.worktreeLabel, sectionColor));
+    this.buildSection.appendChild(row('PR', prText, sectionColor));
+
+    // ── New: built / running-since timestamps (UTC, human-readable) ────────
+    const builtStr = formatUtcStamp(buildInfo.commitDateUtc);
+    if (builtStr) {
+      this.buildSection.appendChild(row('built', builtStr, sectionColor));
+    }
+    const startedStr = formatUtcStamp(buildInfo.serverStartedAt);
+    if (
+      builtStr &&
+      startedStr &&
+      driftMinutes(buildInfo.commitDateUtc, buildInfo.serverStartedAt) > 5
+    ) {
+      this.buildSection.appendChild(row('running since', startedStr, sectionColor));
+    }
+
+    // ── New: goal (plain-English intent) — most prominent line ─────────────
+    if (buildInfo.goal) {
+      const goalRow = row('goal', truncate(buildInfo.goal, 40), '#9bc7e8');
+      goalRow.style.fontWeight = '700';
+      this.buildSection.appendChild(goalRow);
+    }
   }
 
   setVisible(v: boolean): void {

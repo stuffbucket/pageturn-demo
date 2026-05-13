@@ -48,3 +48,13 @@ This project bundles or depends on the following third-party software.
 - License: Apache-2.0
 - Source: https://github.com/lovell/sharp
 - Used by: docs-site image optimization (Astro's `<Image>` component invoked from MDX pages embedding screenshots from `contrib/debug/`).
+
+## qrcode
+
+- Version: 1.5.4
+- License: MIT
+- Source: https://github.com/soldair/node-qrcode
+- Used by: debug HUD (`src/debug.ts`) — renders an ~80×80px QR canvas
+  encoding a small JSON repro recipe (commit, branch, dirty, PR, URL) so
+  agents inspecting a screenshot can reconstruct the exact build that
+  produced it.

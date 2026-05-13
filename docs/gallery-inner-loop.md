@@ -4,7 +4,7 @@ A glance-able reference for the in-browser dev tools that ship with the page-tur
 demo. Each section shows the tool, what it looks like, and when to reach for it.
 All flags can be combined (e.g. `?debug=1&fiducials=1&capture=1&telemetry=1`).
 
-> All screenshots below are pinned to commit `__COMMIT_SHA__` on branch
+> All screenshots below are pinned to commit `7170e327bfbdd4f97c54cbe236ee5ee5034fabce` on branch
 > `docs/inner-loop-gallery`, so the embedded raw-URL references remain valid
 > after the branch is deleted post-merge.
 
@@ -12,7 +12,7 @@ All flags can be combined (e.g. `?debug=1&fiducials=1&capture=1&telemetry=1`).
 
 ## 1. Debug HUD (`?debug=1`)
 
-![Debug HUD](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/01-debug-hud.png)
+![Debug HUD](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/01-debug-hud.png)
 
 A top-right overlay that mirrors the live state machine: `BookState` (`j`,
 `phi`, turning/settling flags), the active drag (`dragPoint`, `progress`,
@@ -25,7 +25,7 @@ section and the repro QR (see section 5).
 
 ## 2. Fiducial overlay (`?fiducials=1`)
 
-![Fiducials](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/02-fiducials.png)
+![Fiducials](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/02-fiducials.png)
 
 A 5x7 grid of labeled colored dots baked into every procedural page texture
 (see `FIDUCIAL_US` / `FIDUCIAL_VS` in `src/textures/atlas.ts`). Use this when
@@ -37,7 +37,7 @@ not meant to ship.
 
 ## 3. Telemetry pipeline (`?telemetry=1`)
 
-![Telemetry tail](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/03-telemetry-tail.png)
+![Telemetry tail](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/03-telemetry-tail.png)
 
 Each event the demo emits (`boot`, `fps-sample`, `state-transition`,
 `drag-start`, `pointer-move` @ 10 Hz, `drag-end`, `screenshot-captured`,
@@ -58,7 +58,7 @@ excerpt is checked in alongside this gallery as
 
 ## 4. Long-press screenshot capture (`?capture=1`)
 
-![Long-press capture result](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/04-capture-result.png)
+![Long-press capture result](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/04-capture-result.png)
 
 Hold the mouse motionless on the canvas for 5 seconds and the page flashes,
 then a PNG plus a sidecar JSON land in `contrib/screenshots/`. The sidecar
@@ -71,7 +71,7 @@ Sidecar example: [`04-capture-sidecar.json`](../contrib/debug/gallery/inner-loop
 
 ## 5. Build info + QR in HUD
 
-![Build section + QR](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/05-build-info-qr.png)
+![Build section + QR](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/05-build-info-qr.png)
 
 The bottom of the `?debug=1` HUD includes a Build section (commit, branch,
 dirty flag, worktree label, PR if any, and the `.build-goal` text) plus a QR
@@ -94,7 +94,7 @@ Decoded payload:
 
 ## 6. Help-menu toggles (`H`)
 
-![Help overlay](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/06-help-menu.png)
+![Help overlay](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/06-help-menu.png)
 
 Press `H` to summon a left-side overlay with state readout, prev/next buttons,
 FPS / current-page stats, and checkboxes that mirror every URL flag above
@@ -108,7 +108,7 @@ the URL bar is hidden, or when toggling state between captures.
 
 | `?dev-surface=0` (legacy `sin(2 phi)` curl) | `?dev-surface=1` (developable cylindrical curl) |
 |---|---|
-| ![sin2phi mid-turn](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/07-dev-surface-off.png) | ![developable mid-turn](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/__COMMIT_SHA__/contrib/debug/gallery/inner-loop/07-dev-surface-on.png) |
+| ![sin2phi mid-turn](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/07-dev-surface-off.png) | ![developable mid-turn](https://raw.githubusercontent.com/stuffbucket/pageturn-demo/7170e327bfbdd4f97c54cbe236ee5ee5034fabce/contrib/debug/gallery/inner-loop/07-dev-surface-on.png) |
 
 The feature flag that switches the turning-page vertex shader between the
 legacy edge-bend (`phi(t) = uDihedral + uBendAmount * t * sin(2 * uDihedral)`)

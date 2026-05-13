@@ -1,0 +1,9 @@
+{"ts":"2026-05-13T19:26:17.416Z","type":"boot","commit":"dev","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.6778.33 Safari/537.36","viewport":{"w":1440,"h":900}}
+{"ts":"2026-05-13T19:26:20.595Z","type":"state-transition","op":"startTurn","j":-1,"phi":0,"isReverseTurn":false}
+{"ts":"2026-05-13T19:26:20.597Z","type":"drag-start","dragPoint":{"x":0.9903125175093016,"y":0},"dragProgress":0,"dragVelocity":0,"reverse":false,"j":-1}
+{"ts":"2026-05-13T19:26:20.678Z","type":"pointer-move","dragPoint":{"x":0.9717056050655949,"y":0.7},"crease":{"alpha":-1.5707963267948966,"originY":0.7,"dihedral":0.08888946326369535},"dragProgress":0.02829439493440511}
+{"ts":"2026-05-13T19:26:20.778Z","type":"pointer-move","dragPoint":{"x":0.8585268260445094,"y":0.7},"crease":{"alpha":-1.5707963267948966,"originY":0.7,"dihedral":0.4444510839786002},"dragProgress":0.14147317395549064}
+{"ts":"2026-05-13T19:26:20.881Z","type":"pointer-move","dragPoint":{"x":0.7453483468442899,"y":0.7},"crease":{"alpha":-1.5707963267948966,"originY":0.7,"dihedral":0.8000117627784751},"dragProgress":0.25465165315571014}
+{"ts":"2026-05-13T19:26:22.577Z","type":"drag-end","dragProgress":1,"dragVelocity":0,"reverse":false}
+{"ts":"2026-05-13T19:26:23.445Z","type":"fps-sample","fps":60}
+{"ts":"2026-05-13T19:26:24.445Z","type":"fps-sample","fps":60}

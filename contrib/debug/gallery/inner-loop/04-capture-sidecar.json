@@ -1,0 +1,75 @@
+{
+  "clientTimestamp": "2026-05-13T19:25:39.423Z",
+  "url": "http://localhost:5201/?capture=1&debug=1&session=gallery",
+  "sessionId": "gallery",
+  "triggerLocation": {
+    "x": 720,
+    "y": 450
+  },
+  "state": {
+    "drag": {
+      "isDragging": true,
+      "dragPoint": null,
+      "dragProgress": 0,
+      "dragVelocity": 0
+    },
+    "crease": {
+      "alpha": 1.5707963267948966,
+      "originY": 0.7,
+      "dihedral": 0,
+      "creaseDir": {
+        "x": 0,
+        "y": 1
+      },
+      "cornerDir": {
+        "x": 1,
+        "y": 0
+      }
+    },
+    "turn": {
+      "j": -1,
+      "phi": 0,
+      "progress": 0,
+      "isTurning": true,
+      "isReverse": false,
+      "settling": false,
+      "settleTarget": 0
+    },
+    "camera": {
+      "position": {
+        "x": 0,
+        "y": 0.6000000000000001,
+        "z": 2.6
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "fps": 60.039370078740156,
+    "build": {
+      "commit": "a2615298388930d2373d6cf010402c586eb176b2",
+      "commitShort": "a261529",
+      "commitDate": "2026-05-12T17:10:26-07:00",
+      "commitDateUtc": "2026-05-13T00:10:26.000Z",
+      "branch": "docs/inner-loop-gallery",
+      "dirty": false,
+      "worktreePath": "<redacted>/pageturn-demo/.claude/worktrees/agent-a58203a07635723be",
+      "worktreeLabel": "agent-a58203a0",
+      "remoteUrl": "https://github.com/stuffbucket/pageturn-demo",
+      "repoSlug": "stuffbucket/pageturn-demo",
+      "pr": null,
+      "serverStartedAt": "2026-05-13T19:23:45.588Z",
+      "goal": "Capture inner-loop tool visual gallery"
+    }
+  },
+  "imageFile": "contrib/screenshots/gallery-2026-05-13T19-25-39-430Z-localhost-5201-capture-1-debug-1-session-gallery.png",
+  "server": {
+    "receivedAt": "2026-05-13T19:25:39.430Z",
+    "git_commit": "a2615298388930d2373d6cf010402c586eb176b2",
+    "git_commit_short": "a261529",
+    "git_branch": "docs/inner-loop-gallery",
+    "git_dirty": true
+  }
+}

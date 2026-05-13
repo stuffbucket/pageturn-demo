@@ -54,7 +54,7 @@
       "commitDate": "2026-05-12T16:20:08-07:00",
       "branch": "validate/build-info-end-to-end",
       "dirty": false,
-      "worktreePath": "/Users/brian/github/bstucker/pageturn-demo/.claude/worktrees/agent-ab31debbe766618d5",
+      "worktreePath": "~/<project>/.claude/worktrees/agent-<id>",
       "worktreeLabel": "agent-ab31debb",
       "remoteUrl": "https://github.com/stuffbucket/pageturn-demo",
       "repoSlug": "stuffbucket/pageturn-demo",

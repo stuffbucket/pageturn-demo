@@ -18,8 +18,8 @@ GitHub API.
 | `home_claude_project` | `~/.claude/projects/-Users-<u>-...` | `<project-memory>` |
 | `worktree_strip` | `.claude/worktrees/agent-<hex>/<file>` | strip worktree prefix |
 | `worktree_placeholder` | bare `.claude/worktrees/agent-<hex>` | `<worktree>/` |
-| `username_brian_path` | `brian` as a path segment (not as a person's name) | `XXXX` |
-| `username_bstucker_path` | `bstucker` as a path segment | `XXXX` |
+| `username_XXXXX_path` | `XXXXX` as a path segment (not as a person's name) | `XXXX` |
+| `username_XXXXX_path` | `XXXXX` as a path segment | `XXXX` |
 
 GitHub login `stuffbucket` (public identity), commit SHAs, branch
 names, PR numbers, agent IDs in isolation, and the repo path
@@ -43,7 +43,7 @@ names, PR numbers, agent IDs in isolation, and the repo path
 | `worktree_placeholder` | 2 |
 
 No matches for `abs_home_path`, `abs_linux_home`, `home_claude_project`,
-`worktree_strip`, `username_brian_path`, or `username_bstucker_path`.
+`worktree_strip`, `username_XXXXX_path`, or `username_XXXXX_path`.
 No secret-token patterns (GitHub PAT, OpenAI, Anthropic, AWS, GCP,
 Slack, PEM) matched anywhere.
 
@@ -64,7 +64,7 @@ Slack, PEM) matched anywhere.
 Before (PR #39 comment 4435638557, fragment):
 
 ```json
-"worktreePath": "/Users/brian/github/bstucker/pageturn-demo/.claude/worktrees/agent-ab31debbe766618d5",
+"worktreePath": "/Users/XXXXX/github/XXXXX/pageturn-demo/.claude/worktrees/agent-ab31debbe766618d5",
 ```
 
 After:

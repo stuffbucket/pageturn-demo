@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "kind": "pageturn-repro",
+  "repo": "https://github.com/stuffbucket/pageturn-demo",
+  "commit": "27be2652d7387396ae09961cea0498ec63241221",
+  "branch": "validate/build-info-end-to-end",
+  "dirty": false,
+  "pr": null,
+  "url": "http://127.0.0.1:5198/?debug=1"
+}

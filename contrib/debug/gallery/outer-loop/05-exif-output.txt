@@ -1,0 +1,25 @@
+ExifTool Version Number         : 13.55
+File Name                       : harness-2026-05-13T19-31-16-960Z-localhost-5173-harness-html-capture-1-session-harness-telemetry-1.png
+File Size                       : 28 kB
+File Permissions                : -rw-r--r--
+File Type                       : PNG
+File Type Extension             : png
+MIME Type                       : image/png
+Image Width                     : 640
+Image Height                    : 360
+Bit Depth                       : 8
+Color Type                      : RGB with Alpha
+Compression                     : Deflate/Inflate
+Filter                          : Adaptive
+Interlace                       : Noninterlaced
+Exif Byte Order                 : Big-endian (Motorola, MM)
+Image Description               : j=-1,phi=0,dihedral=0,sessionId=harness
+Make                            : pageturn-demo
+Camera Model Name               : a261529
+Software                        : pageturn-screenshot-server
+Modify Date                     : 2026:05:13 19:31:16
+Date/Time Original              : 2026:05:13 19:31:16
+User Comment                    : {"drag":{"isDragging":false,"dragPoint":null,"dragProgress":0,"dragVelocity":0},"crease":{"alpha":1.5707963267948966,"originY":0.7,"dihedral":0,"creaseDir":{"x":0,"y":1},"cornerDir":{"x":1,"y":0}},"turn":{"j":-1,"phi":0,"progress":0,"isTurning":false,"isReverse":false,"settling":false,"settleTarget":0},"camera":{"position":{"x":0,"y":0.6000000000000001,"z":2.6},"target":{"x":0,"y":0,"z":0}},"fps":60,"build":{"commit":"a2615298388930d2373d6cf010402c586eb176b2","commitShort":"a261529","commitDate":"2026-05-12T17:10:26-07:00","commitDateUtc":"2026-05-13T00:10:26.000Z","branch":"docs/outer-loop-gallery","dirty":false,"worktreePath":"<path-redacted>","worktreeLabel":"agent-<hash>","remoteUrl":"https://github.com/stuffbucket/pageturn-demo","repoSlug":"stuffbucket/pageturn-demo","pr":null,"serverStartedAt":"2026-05-13T19:24:30.106Z","goal":"Capture outer-loop tool visual gallery"}}
+SRGB Rendering                  : Perceptual
+Image Size                      : 640x360
+Megapixels                      : 0.230

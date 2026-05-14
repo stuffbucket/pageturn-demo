@@ -125,8 +125,29 @@ b̈ = ω² · (b₀ − b) − Db · ḃ + κ · φ̇²         (aero "puff" exc
 `sin(φ)` makes torque vanish when the flap is flat (matching reality and
 removing the current artificial "minimum velocity" hack at `beginSettle`).
 The `κ · φ̇²` term injects energy into `b` proportional to how fast the
-flap is sweeping air — this is the aerodynamic puff. `ω, Db, κ` are art
-knobs; suggested starting points `ω = 12 rad/s`, `Db = 6`, `κ = 0.05`.
+flap is sweeping air — this is the aerodynamic puff. `ω, Dᵦ, κ` are art
+knobs.
+
+**Initial suggested values** (PRD draft): `G = 5`, `D = 6.5`, `ω = 12 rad/s`,
+`Dᵦ = 6`, `κ = 0.05`. These produced a heavily over-damped φ tail
+(ζ_φ ≈ 1.45) and a slowly-decaying b oscillator (ζ_b = 0.25). On review
+the page took ~3–5 s to land from a low-velocity commit, with a visible
+"crawl" through the last 10–20% of the motion.
+
+**Tuned values** (PR #49 follow-up, current `DEFAULT_AERO_PARAMS`):
+`G = 10`, `D = 4`, `ω = 18 rad/s`, `Dᵦ = 18`, `κ = 0.08`, `b₀ = 0.4`,
+`bMax = 0.7`. These give:
+
+- ζ_φ = D / (2·√G) ≈ 0.63 — lightly under-damped, one small overshoot
+  absorbed by the inelastic wall clamp at φ ∈ {0, π}.
+- ζ_b = Dᵦ / (2·ω) = 0.50 — inside the [0.4, 0.7] paper-like band; the
+  envelope decays as exp(−ζω·t) = exp(−9·t), so a typical puff bump falls
+  under 0.02 in ~100 ms.
+- `G` doubled (5 → 10) so the natural-frequency timescale 1/√G is √2
+  shorter; typical mid-fold flicks now land in 300–700 ms instead of
+  3–5 s.
+- `κ` raised in step with ω² so the visible puff amplitude (analytic
+  κ·φ̇²/ω²) is preserved as the b oscillator stiffens.
 
 Per-vertex pressure shaping extends the existing shader formula. Today:
 

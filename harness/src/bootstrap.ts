@@ -210,7 +210,54 @@ async function runScenarioInner(
     throw new Error('canvas.captureStream() is not available');
   }
 
-  const stream = (canvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream })
+  // Optional cursor-overlay path: composite the WebGL canvas + a synthesized
+  // mouse-cursor marker onto a sibling 2D canvas, and capture FROM that
+  // canvas instead of the WebGL one. MediaRecorder records only the canvas
+  // you tap, so DOM overlays don't help — the cursor has to be drawn into
+  // pixels. We track the last dispatched pointer position; on each rAF we
+  // copy the WebGL canvas and stamp a circle. When the marker is stale
+  // (no pointer down) it fades out.
+  let mergeCanvas: HTMLCanvasElement | null = null;
+  let mergeCtx: CanvasRenderingContext2D | null = null;
+  let mergeRaf: number | null = null;
+  let cursorActive = false;
+  let cursorPx = 0;
+  let cursorPy = 0;
+  if (scenario.cursorOverlay) {
+    mergeCanvas = document.createElement('canvas');
+    mergeCanvas.width = canvas.width;
+    mergeCanvas.height = canvas.height;
+    mergeCtx = mergeCanvas.getContext('2d');
+    if (!mergeCtx) throw new Error('harness: 2D context unavailable for cursor overlay');
+    const drawMerge = (): void => {
+      if (!mergeCtx || !mergeCanvas) return;
+      mergeCtx.drawImage(canvas, 0, 0, mergeCanvas.width, mergeCanvas.height);
+      if (cursorActive) {
+        const x = cursorPx * mergeCanvas.width;
+        const y = cursorPy * mergeCanvas.height;
+        mergeCtx.lineWidth = 3;
+        mergeCtx.strokeStyle = 'rgba(0,0,0,0.85)';
+        mergeCtx.fillStyle = 'rgba(255,80,80,0.9)';
+        mergeCtx.beginPath();
+        mergeCtx.arc(x, y, 9, 0, Math.PI * 2);
+        mergeCtx.fill();
+        mergeCtx.stroke();
+        // Crosshair
+        mergeCtx.beginPath();
+        mergeCtx.moveTo(x - 16, y);
+        mergeCtx.lineTo(x + 16, y);
+        mergeCtx.moveTo(x, y - 16);
+        mergeCtx.lineTo(x, y + 16);
+        mergeCtx.strokeStyle = 'rgba(255,255,255,0.7)';
+        mergeCtx.lineWidth = 1;
+        mergeCtx.stroke();
+      }
+      mergeRaf = requestAnimationFrame(drawMerge);
+    };
+    mergeRaf = requestAnimationFrame(drawMerge);
+  }
+  const captureCanvas: HTMLCanvasElement = mergeCanvas ?? canvas;
+  const stream = (captureCanvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream })
     .captureStream(fps);
   const mimeType = pickMimeType();
   const chunks: Blob[] = [];
@@ -263,6 +310,11 @@ async function runScenarioInner(
     const wait = ev.t - elapsed;
     if (wait > 0) await sleep(wait);
     dispatchStep(canvas, ev);
+    if (mergeCanvas && ev.type !== 'raw-event') {
+      cursorPx = ev.x;
+      cursorPy = ev.y;
+      cursorActive = ev.type !== 'pointerup';
+    }
   }
   const remaining = scenario.duration - (performance.now() - t0);
   if (remaining > 0) await sleep(remaining);
@@ -272,6 +324,7 @@ async function runScenarioInner(
   recorder.requestData();
   recorder.stop();
   await withTimeout(stopped, 5_000, 'MediaRecorder.stop');
+  if (mergeRaf !== null) cancelAnimationFrame(mergeRaf);
 
   const blob = new Blob(chunks, { type: mimeType });
   console.log(`[harness] recorded ${chunks.length} chunks, ${blob.size} bytes`);

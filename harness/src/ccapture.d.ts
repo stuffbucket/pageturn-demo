@@ -182,6 +182,15 @@ export interface Scenario {
   assertions?: Assertion[];
   /** If set, run trajectory mode in addition to recording telemetry. */
   trajectories?: boolean;
+  /**
+   * If true, composite a synthesized mouse-cursor marker on top of the
+   * WebGL canvas in the recorded video. The marker tracks the most recent
+   * dispatched pointer event. Used to produce review evidence that shows
+   * mouse position alongside page-turn behavior. Costs one extra 2D
+   * canvas + per-frame drawImage; recording fps drops a few fps on
+   * software WebGL but stays smooth.
+   */
+  cursorOverlay?: boolean;
 }
 
 export interface RunOptions {

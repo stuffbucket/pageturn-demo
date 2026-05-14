@@ -229,8 +229,12 @@ describe('DevelopableSurface — FR-P1 originY-deviation regression', () => {
     let fw = (s + band) / (2 * band);
     fw = Math.max(0, Math.min(1, fw));
     fw = fw * fw * (3 - 2 * fw);
-    // Spine guard for developable path: snap flapPos.x → 0 (post-fix).
-    if (pos[0] <= 1e-4) flapPos[0] = 0;
+    // Spine guard: pin column-0 vertices at rest (visual binding constraint).
+    if (pos[0] <= 1e-4) {
+      flapPos[0] = pos[0];
+      flapPos[1] = pos[1];
+      flapPos[2] = 0;
+    }
     return [
       pos[0] * (1 - fw) + flapPos[0] * fw,
       pos[1] * (1 - fw) + flapPos[1] * fw,
@@ -359,6 +363,28 @@ describe('DevelopableSurface — FR-P1 originY-deviation regression', () => {
         const y = (j / 48 - 0.5) * H;
         const lifted = flipVert([0, y], p);
         expect(Math.abs(lifted[0])).toBeLessThan(1e-9);
+      }
+    }
+  });
+
+  it('keeps spine vertices fully bound (y = rest.y, z = 0) — the visual binding', () => {
+    // Regression for PR #59 follow-up: the original snap-x=0 fix preserved
+    // x but let y/z follow the lifted curl, so the spine column visually
+    // sheared off the binding (gap between page content and spine).
+    // The binding constraint pins column-0 vertices completely.
+    const cd: [number, number] = [-0.437, 0.899];
+    const cnd: [number, number] = [0.899, 0.437];
+    const dihedral = 1.0;
+    for (const originY of [0.7, 0.5, 0.3, 0.0, -0.5]) {
+      const mf = maxFlapDist(cd, cnd, originY);
+      const p = { originY, creaseDir: cd, cornerDir: cnd, dihedral, maxFlapDist: mf };
+      for (let j = 0; j <= 48; j++) {
+        const y = (j / 48 - 0.5) * H;
+        const lifted = flipVert([0, y], p);
+        // x exactly 0 (binding); y exactly at rest; z exactly 0.
+        expect(Math.abs(lifted[0])).toBeLessThan(1e-9);
+        expect(Math.abs(lifted[1] - y)).toBeLessThan(1e-9);
+        expect(Math.abs(lifted[2])).toBeLessThan(1e-9);
       }
     }
   });

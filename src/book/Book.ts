@@ -169,30 +169,32 @@ const FLIP_VERT = /* glsl */`
       float flapWeight = smoothstep(-band, band, s);
 
       // Spine-pin guard. The binding constraint is "spine vertices (x ≈ 0)
-      // stay on x = 0." There are two ways to enforce this and they have
-      // very different implications for FR-P1 (developable inextensibility):
+      // stay at their rest position." This applies uniformly to both shader
+      // paths.
       //
-      //   (legacy / sin2phi path) Hard-pin: set flapWeight = 0 so the
-      //   vertex stays at its rest position. Cheap, but when the crease is
-      //   tilted *and* originY drifts from corner.y, the spine strip
-      //   between (0, originY) and (0, corner.y) is on the flap side per
-      //   the classifier — yet held at rest while column 1 (one mesh cell
-      //   over) lifts to flapPos. That single sliver of mesh can stretch
-      //   from 0.01 wide to ~1.0 wide, ballooning total surface area by up
-      //   to ~45 % at extreme drags (measured, see DevelopableSurface.test).
+      // Earlier (PR #59) tried to be clever for the developable path by
+      // snapping only flapPos.x → 0, leaving flapPos.y / flapPos.z to follow
+      // the curl. That preserved the FR-P1 area metric but moved the spine
+      // column off the binding in y/z — visually the page's spine edge
+      // sheared up/forward off the actual spine, leaving a gap between the
+      // turning page's content and the spine (see issue follow-up to #11).
       //
-      //   (developable path) Snap flapPos.x → 0: keep flapWeight, but
-      //   project the lifted position back onto the y-z plane. The spine
-      //   column slides along y/z with the developable surface but stays
-      //   bound at x = 0. Adjacent column's flapPos is unchanged, so the
-      //   cell-to-cell mapping is now smooth and (approximately) isometric.
-      //   PRD #11 FR-P1 holds within 1 % for realistic drags.
+      // The correct binding constraint is "no motion at x = 0," so we
+      // snap flapPos back to the rest position for column-0 vertices.
+      // This is equivalent to flapWeight = 0 for those vertices.
+      //
+      // A consequence: when the crease is tilted *and* originY drifts from
+      // corner.y, the strip between (0, originY) and (0, corner.y) is on
+      // the flap side of the classifier but pinned by the binding. The
+      // single mesh cell from column 0 (rest) to column 1 (lifted) stretches.
+      // This area distortion is the geometrically inevitable cost of
+      // imposing a Dirichlet binding on an otherwise developable surface —
+      // it models the physical bunching/wrinkling of paper at the spine.
+      // For a spine-aligned crease (horizontal pull) the rest position is
+      // already on the rotation axis, so col 0 needs no pinning and there
+      // is no area distortion in that canonical case.
       if (pos.x <= spineEps) {
-        if (uUseDevelopable > 0.5) {
-          flapPos.x = 0.0;
-        } else {
-          flapWeight = 0.0;
-        }
+        flapPos = pos;
       }
 
       pos = mix(pos, flapPos, flapWeight);

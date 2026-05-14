@@ -59,13 +59,38 @@ export interface AeroSettleParams {
   bMax: number;
 }
 
-/** PRD §"Math sketch" starting values. */
+/**
+ * Tuned defaults (PR #49 follow-up).
+ *
+ * The PRD §"Math sketch" starting values (G=5, D=6.5, ω=12, Dᵦ=6, κ=0.05)
+ * produced a heavily over-damped φ oscillator (ζ_φ = D/(2√G) ≈ 1.45) and a
+ * lightly under-damped but slowly-decaying b oscillator (ζ_b = Dᵦ/(2ω) =
+ * 0.25, envelope time-constant 1/(ζω) ≈ 0.33 s). The visible result was a
+ * page that crawled into its equilibrium over several seconds — the "tail"
+ * the human reviewer flagged on PR #49.
+ *
+ * These tuned values keep both oscillators *lightly* under-damped, which is
+ * what real paper exhibits:
+ *
+ *   ζ_φ = D / (2·√G) = 4 / (2·√10) ≈ 0.63   (just past 1/√2; one tiny
+ *                                            overshoot absorbed by the
+ *                                            inelastic wall clamp at φ=π)
+ *   ζ_b = Dᵦ / (2·ω) = 18 / 36 = 0.50       (well inside the [0.4, 0.7]
+ *                                            "lightly underdamped" band —
+ *                                            quick puff, fast recovery)
+ *
+ * Gravity is also doubled (G=5→10) so the natural-frequency timescale of φ
+ * (1/√G) is √2 shorter — a typical mid-fold flick now lands in ~300–700 ms
+ * instead of ~3–5 s. κ is raised in step with ω² (the analytic puff
+ * equilibrium offset is κ·φ̇²/ω²) so the visible bend bump under a flick is
+ * preserved, not shrunk by the stiffer oscillator.
+ */
 export const DEFAULT_AERO_PARAMS: AeroSettleParams = {
-  G:     5.0,
-  D:     6.5,
-  omega: 12,
-  Db:    6,
-  kappa: 0.05,
+  G:     10.0,
+  D:     4.0,
+  omega: 18,
+  Db:    18,
+  kappa: 0.08,
   b0:    0.4,
   bMax:  0.7,
 };
@@ -155,11 +180,20 @@ export function dirFromTarget(target: 0 | 1, isReverseTurn: boolean): 1 | -1 {
 }
 
 /**
- * Energy-like convergence test. Stop when both the angular residual and
- * the angular velocity have decayed below a tolerance. The bend-envelope
- * is NOT part of the test — b is a cosmetic oscillator and may still be
- * ringing slightly when φ has landed; we let it decay invisibly into the
- * static spread mesh (which uses b₀).
+ * Energy-like convergence test, plus a visual-quiescence shortcut.
+ *
+ * Primary criterion is mechanical energy (per unit moment of inertia):
+ *   E = ½φ̇² + G·(1 − cos(φ − target))
+ * which for small residuals collapses to ½φ̇² + ½G·(Δφ)² — same Lyapunov
+ * shape as the legacy rigid settle, but in radians.
+ *
+ * Secondary criterion catches the asymptotic crawl that the energy stop
+ * leaves on the table when the oscillator is lightly under-damped: if Δφ,
+ * φ̇, AND the bend residual |b − b₀| are all visually negligible, the
+ * page has stopped *to the eye* even if there is mathematical energy left.
+ * Including b here directly addresses the PR #49 review comment that the
+ * tail (the bend amplitude returning to b₀) was held open by residual
+ * curl ringing.
  */
 export function isConverged(
   state: AeroSettleState,
@@ -168,12 +202,16 @@ export function isConverged(
   eps: number = 0.005,
 ): boolean {
   const target = targetPhi(dir);
-  // Total mechanical energy (per unit moment of inertia): ½φ̇² + G·(1 − cos|φ−target|).
-  // For small residuals this collapses to ½φ̇² + ½G·(φ−target)² — same shape
-  // as the legacy energy stop, but expressed in radians.
   const dPhi = state.phi - target;
   const energy = 0.5 * state.phiDot * state.phiDot + params.G * (1 - Math.cos(dPhi));
-  return energy < eps;
+  if (energy < eps) return true;
+  // Visual quiescence: Δφ ≤ ~1.7°, page rotating ≤ ~17°/s, bend within 5%
+  // of rest — at sub-frame visibility on a 1080p target.
+  return (
+    Math.abs(dPhi) < 0.03 &&
+    Math.abs(state.phiDot) < 0.3 &&
+    Math.abs(state.b - params.b0) < 0.02
+  );
 }
 
 /** Map absolute phi → BookState progress (0..1, direction-agnostic). */

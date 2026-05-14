@@ -120,12 +120,41 @@ describe('SettlePhysics — convergence (FR-1.x)', () => {
 describe('SettlePhysics — bend-envelope dynamics (FR-2.x, FR-4.x)', () => {
   it('puff term excites b above b₀ when the flap is sweeping fast (FR-2.1)', () => {
     // Release with a hard flick — κ·φ̇² should pump b detectably above b₀.
-    // With the PRD-suggested ω=12, the oscillator is stiff, so the visible
-    // bump is small but real (analytic equilibrium offset ≈ κ·φ̇²/ω² ≈
-    // 0.05·64/144 ≈ 0.022 at φ̇=8 rad/s).
+    // Tuned defaults: ω=18, κ=0.08, so analytic equilibrium offset
+    // ≈ κ·φ̇²/ω² ≈ 0.08·64/324 ≈ 0.016 at φ̇=8 rad/s; the under-damped
+    // oscillator overshoots that on the way up.
     const trace = simulate(entry(PI / 2, 8), 1, { maxFrames: 60 });
     const peakB = trace.reduce((m, s) => (s.b > m ? s.b : m), DEFAULT_AERO_PARAMS.b0);
     expect(peakB).toBeGreaterThan(DEFAULT_AERO_PARAMS.b0 + 0.01);
+  });
+
+  it('b decays back to near b₀ within 250 ms of an injected puff (tail decay)', () => {
+    // PR #49 review: "the tail of the page settling appears to be too slow
+    // relative to what would be observed in nature." This pins the b
+    // oscillator's decay envelope. ζ_b = Dᵦ/(2ω) = 0.5 ⇒ envelope decays as
+    // exp(−ζω·t) = exp(−9·t), so a 0.05 bump should fall under 0.02 within
+    // ln(0.05/0.02)/9 ≈ 100 ms; 250 ms gives a comfortable headroom.
+    let s = { phi: PI, phiDot: 0, b: DEFAULT_AERO_PARAMS.b0 + 0.05, bDot: 0 };
+    const dt = 1 / 60;
+    let underToleranceAt: number | null = null;
+    for (let i = 0; i < 30; i++) {
+      s = step(s, 1, dt);
+      const t = (i + 1) * dt;
+      if (underToleranceAt === null && Math.abs(s.b - DEFAULT_AERO_PARAMS.b0) < 0.02) {
+        underToleranceAt = t;
+      }
+    }
+    expect(underToleranceAt).not.toBeNull();
+    expect(underToleranceAt!).toBeLessThan(0.25);
+  });
+
+  it('b oscillator is lightly underdamped (ζ_b in [0.4, 0.7])', () => {
+    // Visible quick oscillation instead of over-damped crawl. Pin the
+    // canonical damping ratio so future tuning preserves the "paper-like"
+    // tail.
+    const zetaB = DEFAULT_AERO_PARAMS.Db / (2 * DEFAULT_AERO_PARAMS.omega);
+    expect(zetaB).toBeGreaterThanOrEqual(0.4);
+    expect(zetaB).toBeLessThanOrEqual(0.7);
   });
 
   it('b returns to b₀ as the flap settles (FR-2.2)', () => {

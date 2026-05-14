@@ -77,6 +77,7 @@ const FLIP_VERT = /* glsl */`
   uniform float uUseDevelopable;   // 0 = sin2phi, 1 = developable cylindrical curl
   uniform float uCurlRadius;       // R in page-local units; large value = "flat"
   uniform float uExemptionHalfWidth; // FR-P5 crease-exempt strip half-width
+  uniform float uMaxCurlAngle;       // FR-P1 no-tube clamp: max curl angle theta (radians)
   varying vec2 vUv;
 
   // Rodrigues rotation of v by angle ang around unit axis k.
@@ -138,9 +139,20 @@ const FLIP_VERT = /* glsl */`
         float sPos = max(s, 0.0);
         float effS = max(sPos - uExemptionHalfWidth, 0.0);
         float R = max(uCurlRadius, 1e-4);
-        float theta = effS / R;
-        float sinR = R * sin(theta);
-        float verR = R * (1.0 - cos(theta));
+        // Curl-clamp (no-tube invariant). Without this, theta = effS / R
+        // can exceed 2π for the smallest stocks (R_min = 0.25, effS up
+        // to ~1.7) — the page wraps onto itself and the free edge ends
+        // up near the spine (the failure mode shown in the PR #59
+        // evidence video). Past the clamp, arc-length continues
+        // tangentially in (nPrime, bPrime) so the surface stays
+        // inextensible; only its *curvature* is bounded.
+        // Mirrored in src/book/Book.invariants.test.ts — keep both in sync.
+        float thetaMax = uMaxCurlAngle;
+        float theta = min(effS / R, thetaMax);
+        float sCurl = theta * R;
+        float sExt  = max(effS - sCurl, 0.0);
+        float sinR = R * sin(theta) + sExt * cos(theta);
+        float verR = R * (1.0 - cos(theta)) + sExt * sin(theta);
 
         float rigidS = min(sPos, uExemptionHalfWidth);
         vec3 rigidPart = rigidS * nPrime;
@@ -227,6 +239,24 @@ const CREASE_FRAG = /* glsl */`
     gl_FragColor = vec4(0.0, 0.0, 0.0, line * uOpacity * 0.3);
   }
 `;
+
+/**
+ * No-tube curl clamp (FR-P1 follow-up to PR #59).
+ *
+ * The developable cylindrical curl `theta = effS / R` is unbounded above;
+ * with R = INTERIOR_STOCK.R_min = 0.25 and effS reaching ~1.7 (corner-to-
+ * corner span on a tilted crease), theta exceeds 2π and the page wraps
+ * onto itself, putting the free edge back near the spine. The PR #59
+ * evidence video shows this as the page "curling into a tube".
+ *
+ * Clamping theta to MAX_CURL_ANGLE and continuing the arc-length straight
+ * past the clamp keeps the surface inextensible while bounding curvature
+ * uniformly. π/3 (60°) lets the page bend naturally without ever wrapping
+ * past 90° from the crease, even at full dihedral.
+ *
+ * Tracked by `src/book/Book.invariants.test.ts` (no-tube + curl-angle).
+ */
+export const MAX_CURL_ANGLE = Math.PI / 3;
 
 export class Book {
   private state: BookState;
@@ -460,6 +490,7 @@ export class Book {
       uUseDevelopable:     { value: this.useDevelopable ? 1 : 0 },
       uCurlRadius:         { value: this.developableCurlRadius() },
       uExemptionHalfWidth: { value: DEFAULT_EXEMPTION_HALF_WIDTH * this.pageWidth },
+      uMaxCurlAngle:       { value: MAX_CURL_ANGLE },
     };
   }
 

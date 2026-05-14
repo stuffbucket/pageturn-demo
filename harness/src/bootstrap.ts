@@ -374,6 +374,7 @@ function fiducialWorldPosition(
   developable = false,
   curlR = 1e6,
   exempt = 0,
+  maxCurlAngle = Math.PI / 3,
 ): { x: number; y: number; z: number } {
   const origX = u * PAGE_WIDTH;
   let localX: number;
@@ -385,9 +386,14 @@ function fiducialWorldPosition(
     const rigidS = Math.min(origX, exempt);
     const effS = Math.max(origX - exempt, 0);
     const safeR = curlR > 1e-4 ? curlR : 1e-4;
-    const theta = effS / safeR;
-    const sinR = safeR * Math.sin(theta);
-    const verR = safeR * (1 - Math.cos(theta));
+    // Match the FLIP_VERT curl-clamp (no-tube): bound theta and continue
+    // the arc-length tangentially. Mirrored in Book.ts and the vitest
+    // invariants — keep all three in sync.
+    const theta = Math.min(effS / safeR, maxCurlAngle);
+    const sCurl = theta * safeR;
+    const sExt = Math.max(effS - sCurl, 0);
+    const sinR = safeR * Math.sin(theta) + sExt * Math.cos(theta);
+    const verR = safeR * (1 - Math.cos(theta)) + sExt * Math.sin(theta);
     // n̂' = (cosD, 0, sinD); b̂' = (-sinD, 0, cosD)
     localX = (rigidS + sinR) * cosD - verR * sinD;
     localZ = (rigidS + sinR) * sinD + verR * cosD;

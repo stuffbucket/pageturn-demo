@@ -11,6 +11,7 @@ import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
 import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
 import { developableEnabled } from "./book/DevelopableSurface";
+import { buildSettingsUrl } from "./settings-url";
 import {
   aerodynamicSettleEnabled,
   type AeroSettleState,
@@ -292,53 +293,91 @@ class PageTurnDemo {
 
     const hudCheckbox = document.getElementById('toggle-debug-hud') as HTMLInputElement | null;
     const fidCheckbox = document.getElementById('toggle-fiducials') as HTMLInputElement | null;
+    const captureCheckbox = document.getElementById('toggle-capture') as HTMLInputElement | null;
+    const devSurfaceCheckbox = document.getElementById('toggle-developable') as HTMLInputElement | null;
+
+    // Snapshot the URL-driven boot state so the "Save to URL" button can
+    // tell whether a reload is needed for fiducials / dev-surface (the two
+    // settings that are baked into textures + materials at boot).  Debug HUD
+    // and long-press capture both have live runtime toggles, so they need
+    // no reload regardless.
+    const bootFiducials   = fiducialsEnabled();
+    const bootDevelopable = developableEnabled();
+
     if (hudCheckbox) {
       hudCheckbox.checked = initialDebug;
+      // In-memory only: flips DebugHud visibility immediately.
       hudCheckbox.addEventListener('change', () => {
         this.debugHud?.setVisible(hudCheckbox.checked);
       });
     }
     if (fidCheckbox) {
-      fidCheckbox.checked = fiducialsEnabled();
-      fidCheckbox.addEventListener('change', () => {
-        // Fiducials are baked into page textures at generateBookTextures()
-        // time, so toggling at runtime requires regenerating ~24 canvas
-        // textures or maintaining a parallel overlay-mesh hierarchy. To keep
-        // this PR scoped (no edits to atlas.ts or Book.ts texture plumbing),
-        // we update the URL flag and reload — the user gets a clean restart
-        // with the new fiducials setting in <300 ms on dev server.
-        const params = new URLSearchParams(location.search);
-        if (fidCheckbox.checked) params.set('fiducials', '1');
-        else params.delete('fiducials');
-        const qs = params.toString();
-        location.search = qs ? `?${qs}` : '';
-      });
+      fidCheckbox.checked = bootFiducials;
+      // No runtime effect — fiducials are baked into the texture atlas at
+      // boot.  We *intentionally* do NOT write the URL here: assigning to
+      // `location.search` triggers a full navigation that closes the help
+      // panel mid-click.  The "Save to URL" button below picks up the
+      // checkbox state and reloads exactly once when the user opts in.
+      fidCheckbox.addEventListener('change', () => { /* state read on save */ });
     }
-
-    const captureCheckbox = document.getElementById('toggle-capture') as HTMLInputElement | null;
     if (captureCheckbox) {
       // installLongPressCapture seeds the runtime flag from ?capture=1 on
       // boot; mirror that here so the checkbox UI agrees with handler state.
       captureCheckbox.checked = captureEnabled();
+      // In-memory only: live runtime toggle.
       captureCheckbox.addEventListener('change', () => {
         setCaptureRuntimeEnabled(captureCheckbox.checked);
       });
     }
-
-    const devSurfaceCheckbox = document.getElementById('toggle-developable') as HTMLInputElement | null;
     if (devSurfaceCheckbox) {
-      // The developable-surface shader path is selected once at boot and
-      // baked into the page material at spawn time (cf. Phase A of PRD #11).
-      // Runtime toggling between sin2phi and developable is intentionally
-      // not supported in v1 — too risky for the swap. The checkbox just
-      // updates the URL and reloads, mirroring the fiducials toggle.
-      devSurfaceCheckbox.checked = developableEnabled();
-      devSurfaceCheckbox.addEventListener('change', () => {
-        const params = new URLSearchParams(location.search);
-        if (devSurfaceCheckbox.checked) params.set('dev-surface', '1');
-        else params.delete('dev-surface');
-        const qs = params.toString();
-        location.search = qs ? `?${qs}` : '';
+      devSurfaceCheckbox.checked = bootDevelopable;
+      // No runtime effect — the dev-surface shader path is selected once at
+      // boot.  Same rationale as fiducials above: save+reload via the button.
+      devSurfaceCheckbox.addEventListener('change', () => { /* state read on save */ });
+    }
+
+    // "Save to URL" button — the one place a click is allowed to mutate the
+    // URL.  It builds a URL from the current checkbox state, preserves every
+    // other query param (?session=, ?telemetry=, ?settle=aero, …), and:
+    //   • reloads via location.href when fiducials/dev-surface differ from
+    //     the boot value (those two need a reload to actually apply); or
+    //   • updates the URL bar via history.replaceState (no reload, panel
+    //     stays open) and copies the URL to the clipboard otherwise.
+    const saveBtn = document.getElementById('save-settings-url') as HTMLButtonElement | null;
+    const saveStatus = document.getElementById('save-settings-status') as HTMLElement | null;
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const fids = fidCheckbox?.checked ?? bootFiducials;
+        const devs = devSurfaceCheckbox?.checked ?? bootDevelopable;
+        const url = buildSettingsUrl(location, {
+          debug:       hudCheckbox?.checked ?? initialDebug,
+          fiducials:   fids,
+          capture:     captureCheckbox?.checked ?? captureEnabled(),
+          developable: devs,
+        });
+        const needsReload = (fids !== bootFiducials) || (devs !== bootDevelopable);
+        if (needsReload) {
+          // Reload so fiducials / dev-surface actually take effect.
+          location.href = url;
+          return;
+        }
+        // No reload needed — update the URL bar in place (preserves panel
+        // state, focus, scroll position) and copy to clipboard.
+        try { history.replaceState(history.state, '', url); } catch (_) { /* ignore */ }
+        const showStatus = (msg: string) => {
+          if (!saveStatus) return;
+          saveStatus.textContent = msg;
+          window.setTimeout(() => { if (saveStatus.textContent === msg) saveStatus.textContent = ''; }, 2200);
+        };
+        const nav = navigator as Navigator & { clipboard?: { writeText(s: string): Promise<void> } };
+        if (nav.clipboard?.writeText) {
+          nav.clipboard.writeText(url).then(
+            () => showStatus('Saved + copied'),
+            () => showStatus('Saved (clipboard blocked)'),
+          );
+        } else {
+          showStatus('Saved');
+        }
       });
     }
   }

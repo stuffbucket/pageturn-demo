@@ -158,6 +158,30 @@ button:disabled {
   margin: 2px 0 0 0;
 }
 
+#save-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px 0;
+}
+#save-settings-row button {
+  background: #2196f3;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+#save-settings-row button:hover { background: #1e88e5; }
+#save-settings-row button:active { background: #1976d2; }
+#save-settings-status {
+  color: #8ef58e;
+  font-size: 0.85em;
+  min-height: 1em;
+}
+
 canvas {
   display: block;
   width: 100%;

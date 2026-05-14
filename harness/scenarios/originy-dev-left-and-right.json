@@ -1,0 +1,48 @@
+{
+  "name": "originy-dev-left-and-right",
+  "viewport": { "width": 800, "height": 480 },
+  "duration": 14000,
+  "fps": 24,
+  "url": "http://localhost:5173/harness.html?dev-surface=1&fiducials=1",
+  "cursorOverlay": true,
+  "_notes": "PR #59 review evidence: with ?dev-surface=1 (developable shader path that owns the originY-area-growth fix), exercise both a right-page forward turn (drag starts on right half, sweeps left) AND a left-page reverse turn (drag starts on left half, sweeps right), each with a vertical component so originY drifts from corner.y -- which is the regime the fix targets. Cursor marker is rendered into the recording via scenario.cursorOverlay so reviewers can see the drag path. Book spans viewport x roughly in [0.24, 0.76].",
+  "events": [
+    { "t":   400, "type": "pointerdown", "x": 0.70, "y": 0.30 },
+    { "t":   700, "type": "pointermove", "x": 0.62, "y": 0.36 },
+    { "t":  1000, "type": "pointermove", "x": 0.54, "y": 0.42 },
+    { "t":  1300, "type": "pointermove", "x": 0.46, "y": 0.48 },
+    { "t":  1600, "type": "pointermove", "x": 0.38, "y": 0.55 },
+    { "t":  1900, "type": "pointermove", "x": 0.30, "y": 0.62 },
+    { "t":  2100, "type": "pointerup",   "x": 0.30, "y": 0.62 },
+
+    { "t":  3200, "type": "pointerdown", "x": 0.68, "y": 0.70 },
+    { "t":  3500, "type": "pointermove", "x": 0.60, "y": 0.63 },
+    { "t":  3800, "type": "pointermove", "x": 0.52, "y": 0.56 },
+    { "t":  4100, "type": "pointermove", "x": 0.44, "y": 0.48 },
+    { "t":  4400, "type": "pointermove", "x": 0.36, "y": 0.40 },
+    { "t":  4700, "type": "pointermove", "x": 0.30, "y": 0.34 },
+    { "t":  4900, "type": "pointerup",   "x": 0.30, "y": 0.34 },
+
+    { "t":  6200, "type": "pointerdown", "x": 0.32, "y": 0.34 },
+    { "t":  6500, "type": "pointermove", "x": 0.40, "y": 0.40 },
+    { "t":  6800, "type": "pointermove", "x": 0.48, "y": 0.46 },
+    { "t":  7100, "type": "pointermove", "x": 0.56, "y": 0.52 },
+    { "t":  7400, "type": "pointermove", "x": 0.64, "y": 0.59 },
+    { "t":  7700, "type": "pointermove", "x": 0.70, "y": 0.66 },
+    { "t":  7900, "type": "pointerup",   "x": 0.70, "y": 0.66 },
+
+    { "t":  9000, "type": "pointerdown", "x": 0.30, "y": 0.66 },
+    { "t":  9300, "type": "pointermove", "x": 0.38, "y": 0.60 },
+    { "t":  9600, "type": "pointermove", "x": 0.46, "y": 0.54 },
+    { "t":  9900, "type": "pointermove", "x": 0.54, "y": 0.46 },
+    { "t": 10200, "type": "pointermove", "x": 0.62, "y": 0.40 },
+    { "t": 10500, "type": "pointermove", "x": 0.70, "y": 0.34 },
+    { "t": 10700, "type": "pointerup",   "x": 0.70, "y": 0.34 },
+
+    { "t": 12000, "type": "pointerdown", "x": 0.70, "y": 0.50 },
+    { "t": 12300, "type": "pointermove", "x": 0.58, "y": 0.50 },
+    { "t": 12600, "type": "pointermove", "x": 0.44, "y": 0.50 },
+    { "t": 12900, "type": "pointermove", "x": 0.30, "y": 0.50 },
+    { "t": 13100, "type": "pointerup",   "x": 0.30, "y": 0.50 }
+  ]
+}

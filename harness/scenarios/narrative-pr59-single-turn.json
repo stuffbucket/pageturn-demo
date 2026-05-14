@@ -1,0 +1,18 @@
+{
+  "name": "narrative-pr59-single-turn",
+  "viewport": { "width": 1280, "height": 720 },
+  "duration": 5000,
+  "fps": 30,
+  "url": "http://localhost:5173/harness.html?dev-surface=1&fiducials=1",
+  "cursorOverlay": true,
+  "_notes": "PR #59 narrative-video scenario: one slow right-page forward turn with a vertical drag component. The vertical component pushes effS toward the corner-to-corner distance (~1.7W) which is the regime that, without the curl-angle clamp, makes theta = effS/R exceed 2*PI and wrap the page into a tube. Captured twice: once with MAX_CURL_ANGLE temporarily reverted (pre-fix) and once with the clamp in place (post-fix). 1280x720@30fps so the recording can be spliced directly into the story video without scaling.",
+  "events": [
+    { "t":  400, "type": "pointerdown", "x": 0.70, "y": 0.30 },
+    { "t":  700, "type": "pointermove", "x": 0.62, "y": 0.36 },
+    { "t": 1000, "type": "pointermove", "x": 0.54, "y": 0.42 },
+    { "t": 1300, "type": "pointermove", "x": 0.46, "y": 0.48 },
+    { "t": 1600, "type": "pointermove", "x": 0.38, "y": 0.55 },
+    { "t": 1900, "type": "pointermove", "x": 0.30, "y": 0.62 },
+    { "t": 2100, "type": "pointerup",   "x": 0.30, "y": 0.62 }
+  ]
+}

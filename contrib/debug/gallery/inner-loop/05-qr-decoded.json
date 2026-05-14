@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "kind": "pageturn-repro",
+  "repo": "https://github.com/stuffbucket/pageturn-demo",
+  "commit": "a2615298388930d2373d6cf010402c586eb176b2",
+  "branch": "docs/inner-loop-gallery",
+  "dirty": false,
+  "pr": null,
+  "goal": "Capture inner-loop tool visual gallery",
+  "url": "http://localhost:5201/?debug=1&session=gallery"
+}

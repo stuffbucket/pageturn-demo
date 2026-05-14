@@ -1,0 +1,75 @@
+{
+  "clientTimestamp": "2026-05-13T19:31:16.956Z",
+  "url": "http://localhost:5173/harness.html?capture=1&session=harness&telemetry=1",
+  "sessionId": "harness",
+  "triggerLocation": {
+    "x": 544,
+    "y": 18
+  },
+  "state": {
+    "drag": {
+      "isDragging": false,
+      "dragPoint": null,
+      "dragProgress": 0,
+      "dragVelocity": 0
+    },
+    "crease": {
+      "alpha": 1.5707963267948966,
+      "originY": 0.7,
+      "dihedral": 0,
+      "creaseDir": {
+        "x": 0,
+        "y": 1
+      },
+      "cornerDir": {
+        "x": 1,
+        "y": 0
+      }
+    },
+    "turn": {
+      "j": -1,
+      "phi": 0,
+      "progress": 0,
+      "isTurning": false,
+      "isReverse": false,
+      "settling": false,
+      "settleTarget": 0
+    },
+    "camera": {
+      "position": {
+        "x": 0,
+        "y": 0.6000000000000001,
+        "z": 2.6
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "fps": 60,
+    "build": {
+      "commit": "a2615298388930d2373d6cf010402c586eb176b2",
+      "commitShort": "a261529",
+      "commitDate": "2026-05-12T17:10:26-07:00",
+      "commitDateUtc": "2026-05-13T00:10:26.000Z",
+      "branch": "docs/outer-loop-gallery",
+      "dirty": false,
+      "worktreePath": "<path-redacted>",
+      "worktreeLabel": "agent-<hash>",
+      "remoteUrl": "https://github.com/stuffbucket/pageturn-demo",
+      "repoSlug": "stuffbucket/pageturn-demo",
+      "pr": null,
+      "serverStartedAt": "2026-05-13T19:24:30.106Z",
+      "goal": "Capture outer-loop tool visual gallery"
+    }
+  },
+  "imageFile": "contrib/screenshots/harness-2026-05-13T19-31-16-960Z-localhost-5173-harness-html-capture-1-session-harness-telemetry-1.png",
+  "server": {
+    "receivedAt": "2026-05-13T19:31:16.960Z",
+    "git_commit": "a2615298388930d2373d6cf010402c586eb176b2",
+    "git_commit_short": "a261529",
+    "git_branch": "docs/outer-loop-gallery",
+    "git_dirty": true
+  }
+}

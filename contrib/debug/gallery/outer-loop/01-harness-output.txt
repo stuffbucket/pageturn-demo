@@ -1,0 +1,16 @@
+(node:46162) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ spine-pin-diagonal  (1500ms @ 30fps)
+  · [page:debug] [vite] connecting...
+  · [page:debug] [vite] connected.
+  · [page:log] [harness:trajectories] "spine-pin-diagonal" fps=30 duration=1500ms
+  · [page:log] [harness:trajectories] sampled 1505 fiducial points across 35 markers
+  · scenario ran in 2494ms (trajectory mode)
+  ✓ trajectory: Spine-adjacent fiducial (u=0.1, v=0.5) world-space |x| stays bounded by the page-local origX (=0.1). Under the spine-tear bug the GPU shader detached this column from x=0; the JS model used here is a conservative tautology — see scenario _notes.
+      abs-max(P_0_3.x) = 0.1000 vs threshold 0.105 (pass)
+  ✗ pixel-min-luma: Spine column (canvas centre, ~3% wide x 20% tall) is showing page-cream pixels at peak dihedral, not background. Catches gross spine-region rendering failures (shader compile error, full page detachment).
+      mean luma=47.51 (threshold>=90, region=1368px @ 313,144 -> 332,216)
+
+Assertion summary: 0/1 scenarios passed.
+  ✗ spine-pin-diagonal
+      - Spine column (canvas centre, ~3% wide x 20% tall) is showing page-cream pixels at peak dihedral, not background. Catches gross spine-region rendering failures (shader compile error, full page detachment).: mean luma=47.51 (threshold>=90, region=1368px @ 313,144 -> 332,216)

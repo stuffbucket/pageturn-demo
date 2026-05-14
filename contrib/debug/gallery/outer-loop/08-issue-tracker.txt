@@ -1,0 +1,10 @@
+   #  state    labels                                    title
+------------------------------------------------------------------------------------------------------------------------
+  18  CLOSED   bug,model,tracked-by-prd-11               Inextensibility violation: page stretches as drag advances
+  19  OPEN     model,tracked-by-prd-9,feature            Aerodynamic settle not implemented
+  20  CLOSED   tech-debt,tests                           Popup spread tests have been failing pre-existing on main
+  21  CLOSED   tech-debt,polish                          createPopup unused-method TS warning
+  24  CLOSED                                             bug: Destination of screenshots not clear
+  29  OPEN     bug,model,tracked-by-prd-9                Upon release the animation reverts to edge-bend model instea
+  31  CLOSED   bug,model                                 Back face of turning page bleeds through front (cover gradie
+  32  CLOSED   bug,model                                 Ragged tessellation at spine boundary on tilted-crease drag

@@ -1,0 +1,35 @@
+StrykerJS Mutation Testing Summary
+===================================
+Tool:    @stryker-mutator/core@9.6.1 (Vitest runner + TypeScript checker)
+Config:  stryker.conf.json
+Command: npm run test:mutation
+Latest:  docs/mutation-test-report-2026-05-12.md
+Time:    ~1m 48s on host (4 concurrent runners)
+
+Scope (3 of 5 src/book/ modules mutated):
+  BookState.ts        482 LOC   ~108 unit tests
+  CreaseGeometry.ts   239 LOC   CreaseGeometry.test.ts
+  PageGeometry.ts      83 LOC   PageGeometry.test.ts
+
+Excluded: Book.ts (popup tests baseline-failing, ADR-0001 / issue #20),
+          PageMaterial.ts, main.ts, textures/atlas.ts, debug.ts,
+          telemetry.ts, long-press-capture.ts, counter.ts.
+
+Results
+-------
+File              | % Mutation score | # killed | # timeout | # survived | # no cov | # errors
+                  |  total | covered |          |           |            |          |
+------------------+--------+---------+----------+-----------+------------+----------+----------
+All files         |  67.96 |   75.36 |      253 |        10 |         86 |       38 |       61
+ BookState.ts     |  67.92 |   77.59 |      174 |         6 |         52 |       33 |       46
+ CreaseGeometry.ts|  63.64 |   65.88 |       53 |         3 |         29 |        3 |       13
+ PageGeometry.ts  |  79.41 |   84.38 |       26 |         1 |          5 |        2 |        2
+
+448 mutants total: 253 killed (56.5%) | 10 timed out | 86 survived | 38 no-coverage | 61 TS-rejected
+Total mutation score: 67.96%   Covered-code score: 75.36%
+
+Industry benchmark: 70-85% healthy, >90% excellent for pure-math modules.
+CreaseGeometry.ts is the weak spot - tracked in the report's top-10
+surviving-mutants table with recommendations per row.
+
+Report HTML: reports/mutation/mutation.html (gitignored, regenerate locally).

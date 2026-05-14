@@ -680,6 +680,45 @@ export class Book {
     }
   }
 
+  /**
+   * Drive the bend envelope amplitude during a turn — used by the
+   * aerodynamic settle integrator (`?settle=aero`, PRD §9) to inject the
+   * `b` and `1/R` puff dynamics into the live shader. No-op when no
+   * turning mesh exists, so callers can fire-and-forget during settle.
+   *
+   * In the sin2phi (legacy) path this directly modulates the bend
+   * envelope `b·t·sin(2φ)`. In the developable path the same `b` value
+   * drives a smooth modulation of the curl radius `R` around the
+   * page-stock baseline, preserving the FR-P1 inextensibility invariant
+   * while still letting the settle visibly oscillate (FR-P4 continuity).
+   */
+  setBendAmount(b: number): void {
+    if (!this.turningPageMesh) return;
+    const mat = this.turningPageMesh.material as THREE.ShaderMaterial;
+    mat.uniforms.uBendAmount.value = b;
+    if (this.useDevelopable) {
+      // Map b (bend amplitude, ~0.4 rest) → R (curl radius). Larger b ⇒
+      // tighter curl ⇒ smaller R. We anchor at the stock's baseline R_min
+      // and scale inversely: R = R_min · (b₀ / max(b, ε)). The denominator
+      // is clamped so a transient b ≈ 0 doesn't blow R to infinity (which
+      // would visibly flatten the page mid-settle).
+      const b0 = 0.4;
+      const safe = Math.max(b, 0.05);
+      mat.uniforms.uCurlRadius.value = this.pageStock.R_min * (b0 / safe);
+    }
+  }
+
+  /**
+   * Read the live bend envelope amplitude. Useful for telemetry and for
+   * the aerodynamic settle integrator's initial-state snapshot.
+   */
+  getBendAmount(): number {
+    if (!this.turningPageMesh) return 0.4;
+    const mat = this.turningPageMesh.material as THREE.ShaderMaterial;
+    return mat.uniforms.uBendAmount.value as number;
+  }
+
+
   completeTurn(): void {
     if (this.turningPageMesh) {
       this.group.remove(this.turningPageMesh);

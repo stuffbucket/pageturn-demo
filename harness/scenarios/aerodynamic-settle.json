@@ -1,0 +1,35 @@
+{
+  "name": "aerodynamic-settle",
+  "viewport": { "width": 640, "height": 360 },
+  "duration": 4000,
+  "fps": 24,
+  "url": "http://localhost:5173/harness.html?telemetry=1&settle=aero",
+  "_notes": "Drag the page to roughly π/2 then release with near-zero velocity. The aerodynamic settle (?settle=aero, PRD #9) should: (1) emit a settle-start{mode:'aero'} event when the pointer is released, (2) emit a matching settle-end{mode:'aero', target:1} after the coupled φ/b oscillator converges — proving the new integrator drove the page all the way home rather than the legacy 1-DOF energy-based path, and (3) emit the settle-end within ~3 s of release. The withinMsAfterT bound also catches the issue-#29 failure mode where settle reverts to the edge-bend model on release: that produced a sub-100ms snap-back to a frozen edge-bend, never reaching the aero settle-end event.",
+  "events": [
+    { "t":  150, "type": "pointerdown", "x": 0.68, "y": 0.50 },
+    { "t":  300, "type": "pointermove", "x": 0.60, "y": 0.50 },
+    { "t":  500, "type": "pointermove", "x": 0.50, "y": 0.50 },
+    { "t":  700, "type": "pointermove", "x": 0.42, "y": 0.50 },
+    { "t":  850, "type": "pointermove", "x": 0.38, "y": 0.50 },
+    { "t":  950, "type": "pointermove", "x": 0.36, "y": 0.50 },
+    { "t": 1000, "type": "pointerup",   "x": 0.36, "y": 0.50 }
+  ],
+  "assertions": [
+    {
+      "type": "telemetry-event",
+      "event": "settle-start",
+      "where": { "mode": "aero" },
+      "afterEventAtT": 1000,
+      "withinMsAfterT": 100,
+      "description": "Releasing the page enters the aerodynamic settle path (?settle=aero), not the legacy 1-DOF energy integrator."
+    },
+    {
+      "type": "telemetry-event",
+      "event": "settle-end",
+      "where": { "mode": "aero", "target": 1 },
+      "afterEventAtT": 1000,
+      "withinMsAfterT": 3000,
+      "description": "The coupled φ/b oscillator converges to commit (target=1) within ~3 s of release — proves the aero integrator drives the turn to completion rather than snapping back to the edge-bend model (issue #29)."
+    }
+  ]
+}

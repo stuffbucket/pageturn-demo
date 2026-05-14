@@ -168,9 +168,32 @@ const FLIP_VERT = /* glsl */`
       float band = max(uMaxFlapDist, 1e-6) * 0.02;
       float flapWeight = smoothstep(-band, band, s);
 
-      // Spine-pin guard preserved verbatim: x ≈ 0 vertices stay anchored on
-      // the binding regardless of the tilted classifier's score.
-      if (pos.x <= spineEps) flapWeight = 0.0;
+      // Spine-pin guard. The binding constraint is "spine vertices (x ≈ 0)
+      // stay on x = 0." There are two ways to enforce this and they have
+      // very different implications for FR-P1 (developable inextensibility):
+      //
+      //   (legacy / sin2phi path) Hard-pin: set flapWeight = 0 so the
+      //   vertex stays at its rest position. Cheap, but when the crease is
+      //   tilted *and* originY drifts from corner.y, the spine strip
+      //   between (0, originY) and (0, corner.y) is on the flap side per
+      //   the classifier — yet held at rest while column 1 (one mesh cell
+      //   over) lifts to flapPos. That single sliver of mesh can stretch
+      //   from 0.01 wide to ~1.0 wide, ballooning total surface area by up
+      //   to ~45 % at extreme drags (measured, see DevelopableSurface.test).
+      //
+      //   (developable path) Snap flapPos.x → 0: keep flapWeight, but
+      //   project the lifted position back onto the y-z plane. The spine
+      //   column slides along y/z with the developable surface but stays
+      //   bound at x = 0. Adjacent column's flapPos is unchanged, so the
+      //   cell-to-cell mapping is now smooth and (approximately) isometric.
+      //   PRD #11 FR-P1 holds within 1 % for realistic drags.
+      if (pos.x <= spineEps) {
+        if (uUseDevelopable > 0.5) {
+          flapPos.x = 0.0;
+        } else {
+          flapWeight = 0.0;
+        }
+      }
 
       pos = mix(pos, flapPos, flapWeight);
     }

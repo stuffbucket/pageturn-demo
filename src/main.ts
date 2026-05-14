@@ -11,6 +11,16 @@ import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
 import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
 import { developableEnabled } from "./book/DevelopableSurface";
+import {
+  aerodynamicSettleEnabled,
+  type AeroSettleState,
+  DEFAULT_AERO_PARAMS,
+  dirFromTarget,
+  entry as aeroEntry,
+  isConverged as aeroConverged,
+  progressFromPhi,
+  step as aeroStep,
+} from "./book/SettlePhysics";
 import { buildInfo } from 'virtual:build-info';
 
 // ── Physics settle constants ────────────────────────────────────────────────
@@ -53,6 +63,11 @@ class PageTurnDemo {
   private settling       = false;
   private settleTarget   = 0;   // 0 (cancel) or 1 (complete)
   private settleVelocity = 0;
+  // Aerodynamic settle (?settle=aero, PRD #9). Null when running on the
+  // legacy energy-based 1-DOF path.
+  private aeroSettle: AeroSettleState | null = null;
+  private aeroSettleDir: 1 | -1 = 1;
+  private readonly useAeroSettle = aerodynamicSettleEnabled();
   private dragStartX     = 0;   // world X at drag start (projected onto XZ plane)
   private dragStartY     = 0;   // page-local Y at drag start (for tilted-crease drag)
   private dragPageWidth  = 1.0;
@@ -495,9 +510,35 @@ class PageTurnDemo {
   private beginSettle(target: number): void {
     this.settling       = true;
     this.settleTarget   = target;
-    // Seed velocity with drag momentum, but always ensure at least a minimum
-    // in the settle direction so the page never appears to stall from rest
-    // at the midpoint (where the bend envelope is also zero).
+
+    if (this.useAeroSettle) {
+      // Aerodynamic path (PRD #9). Snapshot the live absolute phi and an
+      // estimate of phi-dot from the in-hand drag velocity. The
+      // direction-agnostic dragVelocity is in progress/sec (Δp/Δt); convert
+      // to rad/s of *absolute* phi by multiplying by π and flipping sign
+      // for reverse turns so the integrator always sees the correct phi
+      // direction of motion.
+      const state = this.book.getState();
+      const phi0 = state.getRotationAngle();
+      const reverse = state.getIsReverseTurn();
+      const phiDot0 = this.dragVelocity * Math.PI * (reverse ? -1 : 1);
+      this.aeroSettle = aeroEntry(phi0, phiDot0);
+      this.aeroSettleDir = dirFromTarget(target >= 1 ? 1 : 0, reverse);
+      emitTelemetry('settle-start', {
+        mode: 'aero',
+        target,
+        reverse,
+        phi: phi0,
+        phiDot: phiDot0,
+        dir: this.aeroSettleDir,
+      });
+      return;
+    }
+
+    // Legacy energy-based 1-DOF path. Seed velocity with drag momentum,
+    // but always ensure at least a minimum in the settle direction so the
+    // page never appears to stall from rest at the midpoint (where the
+    // bend envelope is also zero).
     const dir    = target >= 1 ? 1 : -1;
     const minVel = 0.8;
     this.settleVelocity = (dir * this.dragVelocity > 0)
@@ -560,6 +601,7 @@ class PageTurnDemo {
       this.updateUI();
     } else if (this.settling) {
       this.settling = false;
+      this.aeroSettle = null;
       this.book.cancelTurn();
       this.controls.enabled = true;
       this.renderer.domElement.style.cursor = 'default';
@@ -684,35 +726,63 @@ class PageTurnDemo {
 
     // Physics settle — gravity + air resistance, energy-based stop condition
     if (this.settling) {
-      const dir = this.settleTarget >= 1 ? 1 : -1;
-      this.settleVelocity += dir * GRAVITY * dt;
-      this.settleVelocity *= Math.max(0, 1 - DRAG_COEFF * dt);
-      const rawP = this.dragProgress + this.settleVelocity * dt;
-      this.dragProgress = Math.max(0, Math.min(1, rawP));
-      // Inelastic wall: zero velocity when p clamps at [0,1] boundary,
-      // otherwise gravity keeps pumping energy into a pinned page.
-      if (rawP !== this.dragProgress) this.settleVelocity = 0;
-
-      this.book.updateTurningPage(this.dragProgress);
-
-      // Energy-based stop: E = ½v² + G·|p − target|
-      // This correctly detects convergence regardless of whether position
-      // or velocity is the dominant residual.
-      const energy = 0.5 * this.settleVelocity * this.settleVelocity
-                   + GRAVITY * Math.abs(this.dragProgress - this.settleTarget);
-      if (energy < SETTLE_ENERGY_EPS) {
-        this.dragProgress = this.settleTarget;
+      if (this.aeroSettle) {
+        // Aerodynamic settle (PRD #9): coupled (φ, b) damped oscillator.
+        // φ̈ = dir·G·sin(φ) − D·φ̇                    (gravity torque)
+        // b̈ = ω²(b₀ − b) − Dᵦ·ḃ + κ·φ̇²              (aero puff)
+        this.aeroSettle = aeroStep(this.aeroSettle, this.aeroSettleDir, dt);
+        const reverse = this.book.getState().getIsReverseTurn();
+        this.dragProgress = progressFromPhi(this.aeroSettle.phi, reverse);
         this.book.updateTurningPage(this.dragProgress);
-        this.settling     = false;
-        this.controls.enabled = true;
-        if (this.settleTarget >= 1) {
-          this.book.completeTurn();
-        } else {
-          this.book.cancelTurn();
+        this.book.setBendAmount(this.aeroSettle.b);
+
+        if (aeroConverged(this.aeroSettle, this.aeroSettleDir)) {
+          // Snap φ to the exact equilibrium so the hand-off to the static
+          // spread mesh is C0-continuous (FR-4.3).
+          this.dragProgress = this.settleTarget;
+          this.book.updateTurningPage(this.dragProgress);
+          this.book.setBendAmount(DEFAULT_AERO_PARAMS.b0);
+          this.settling = false;
+          this.aeroSettle = null;
+          this.controls.enabled = true;
+          if (this.settleTarget >= 1) this.book.completeTurn();
+          else                         this.book.cancelTurn();
+          emitTelemetry('settle-end', { mode: 'aero', target: this.settleTarget });
+          this.checkVideoSpread();
+          this.announcePageChange();
+          this.updateUI();
         }
-        this.checkVideoSpread();
-        this.announcePageChange();
-        this.updateUI();
+      } else {
+        const dir = this.settleTarget >= 1 ? 1 : -1;
+        this.settleVelocity += dir * GRAVITY * dt;
+        this.settleVelocity *= Math.max(0, 1 - DRAG_COEFF * dt);
+        const rawP = this.dragProgress + this.settleVelocity * dt;
+        this.dragProgress = Math.max(0, Math.min(1, rawP));
+        // Inelastic wall: zero velocity when p clamps at [0,1] boundary,
+        // otherwise gravity keeps pumping energy into a pinned page.
+        if (rawP !== this.dragProgress) this.settleVelocity = 0;
+
+        this.book.updateTurningPage(this.dragProgress);
+
+        // Energy-based stop: E = ½v² + G·|p − target|
+        // This correctly detects convergence regardless of whether position
+        // or velocity is the dominant residual.
+        const energy = 0.5 * this.settleVelocity * this.settleVelocity
+                     + GRAVITY * Math.abs(this.dragProgress - this.settleTarget);
+        if (energy < SETTLE_ENERGY_EPS) {
+          this.dragProgress = this.settleTarget;
+          this.book.updateTurningPage(this.dragProgress);
+          this.settling     = false;
+          this.controls.enabled = true;
+          if (this.settleTarget >= 1) {
+            this.book.completeTurn();
+          } else {
+            this.book.cancelTurn();
+          }
+          this.checkVideoSpread();
+          this.announcePageChange();
+          this.updateUI();
+        }
       }
     }
 

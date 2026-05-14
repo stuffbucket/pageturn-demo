@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused mutation run scoped to the page-model files for the 2026-05-14 audit.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts"
+  },
+  "mutate": [
+    "src/book/Book.ts",
+    "src/book/CreaseGeometry.ts",
+    "src/book/DevelopableSurface.ts",
+    "src/book/SettlePhysics.ts",
+    "src/book/PageGeometry.ts",
+    "src/book/PageMaterial.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": ["json", "html", "clear-text", "progress"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/page-model.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/page-model.json"
+  },
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "disableTypeChecks": false,
+  "timeoutMS": 60000,
+  "concurrency": 4
+}

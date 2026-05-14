@@ -398,7 +398,7 @@ export class Book {
    *
    * Reserved: invoked from line 191 once the popup feature ships. See issue #21.
    */
-  // @ts-expect-error TS6133: unused while popup feature is disabled (see issue #21)
+  // @ts-ignore TS6133: unused while popup feature is disabled (see issue #21)
   private createPopup(): void {
     this.popupGroup = new THREE.Group();
 

@@ -97,7 +97,27 @@ the ~2-minute job runtime against value to PR review.
 
 ## Current blocker: issue #20
 
-`Book.ts` is **not** in the Stryker `mutate` set today. Eight popup tests fail
-at baseline (issue #20), and Stryker requires a green dry run, so including
-`Book.ts` would break every mutation invocation. Once #20 is resolved, add
-`src/book/Book.ts` back to `mutate` in `stryker.conf.json` and re-baseline.
+~~`Book.ts` is **not** in the Stryker `mutate` set today.~~ **Resolved 2026-05-14.**
+Per ADR-0001 the popup feature is disabled-by-design and the eight previously
+failing tests live behind `describe.skip(...)`, so `Book.test.ts` is now part of
+the Stryker dry run and `Book.ts` is back in the `mutate` set. `PageMaterial.ts`
+was also added at the same time, backed by a new smoke-test suite. See
+`docs/mutation-test-report-2026-05-14.md` for the post-reactivation baseline.
+
+## Mutation-score floors (informational)
+
+These are the per-file floors observed on the 2026-05-14 baseline. They are
+**not enforced** in CI today — they are reference points so a future agent can
+tell at a glance whether a change pulled a number down. Drops > 2 % warrant
+investigation; the JSON report at `reports/mutation/mutation.html` is the
+ground truth.
+
+| File | Total score | Score on covered code | Notes |
+|---|---|---|---|
+| `src/book/CreaseGeometry.ts` | 89.8 % | 90.8 % | Pure math + numeric oracles |
+| `src/book/SettlePhysics.ts` | 84.2 % | 86.0 % | Boundary-equality survivors are equivalent mutants |
+| `src/book/PageGeometry.ts` | 91.2 % | 91.2 % | Three.js plumbing |
+| `src/book/PageMaterial.ts` | 100 % | 100 % | Legacy / unused, smoke tests only |
+| `src/book/DevelopableSurface.ts` | 79.3 % | 80.7 % | Equivalent-mutant ceiling (Rodrigues terms multiply zero by construction) |
+| `src/book/BookState.ts` | 68 % | 75 % | Baseline from 2026-05-12; telemetry payload tests would lift this |
+| `src/book/Book.ts` | 19.6 % | 29.6 % | Shader/Three.js mesh-lifecycle code; most mutants live in code Stryker cannot meaningfully observe through unit tests |

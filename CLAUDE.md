@@ -91,10 +91,10 @@ The Docker harness mounts `../contrib/screenshots:/work/contrib/screenshots`, so
 
 ## Testing
 
-- `npm test` — Vitest. Currently **174 pass + 10 skipped + 0 fail**. The 10 skipped are the popup tests disabled per ADR-0001 — don't be alarmed.
-- `npm run test:mutation` — full StrykerJS run. Excludes `Book.ts` while the popup tests are skipped (see ADR-0001 reactivation checklist).
+- `npm test` — Vitest. Currently **262 pass + 10 skipped + 0 fail**. The 10 skipped are the popup tests disabled per ADR-0001 — don't be alarmed.
+- `npm run test:mutation` — full StrykerJS run. As of 2026-05-14 the mutate set includes `Book.ts` and `PageMaterial.ts` (ADR-0001 unblocked the dry run).
 - `npm run test:mutation:if-changed` — gated on test-file diff + green tests; cheap to run in CI/pre-commit.
-- Mutation policy: [`docs/mutation-testing-policy.md`](docs/mutation-testing-policy.md). Latest report: [`docs/mutation-test-report-2026-05-12.md`](docs/mutation-test-report-2026-05-12.md). Test audit: [`docs/test-audit-2026-05-12.md`](docs/test-audit-2026-05-12.md).
+- Mutation policy: [`docs/mutation-testing-policy.md`](docs/mutation-testing-policy.md). Latest report: [`docs/mutation-test-report-2026-05-14.md`](docs/mutation-test-report-2026-05-14.md). Test audit: [`docs/test-audit-2026-05-12.md`](docs/test-audit-2026-05-12.md).
 
 No linter is configured.
 

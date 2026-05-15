@@ -69,6 +69,18 @@ export interface StateSnapshot {
    * sidecars produced before the virtual:build-info plugin landed.
    */
   build?: BuildInfo;
+  /**
+   * Diagnostic snapshot added 2026-05-14 (see docs/diagnostic-2026-05-14.md):
+   * the live 5×7 fiducial grid in book-local world space + the FR-P1 area
+   * ratio at the moment of capture, plus the nearest-fiducial info for the
+   * drag origin.  All three optional for back-compat with older sidecars.
+   */
+  diagnostics?: {
+    fiducials: Array<{ id: string; i: number; j: number; u: number; v: number; pos: { x: number; y: number; z: number } }>;
+    areaRatio: number;
+    bendAmount: number;
+    dragOriginFiducial: { i: number; j: number; du: number; dv: number } | null;
+  };
 }
 
 interface ScreenshotPayload {

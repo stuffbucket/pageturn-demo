@@ -124,6 +124,14 @@ export class BookState {
   // free edge at x=pageWidth, top at y=+pageHeight/2).  Null means "no
   // interactive 2D drag has been set; synthesise from phi".
   private dragPoint: Vec2 | null = null;
+  // ── Per-gesture spine anchor (Option B fix for issue #78) ─────────────────
+  // The y-coordinate at which the crease line is pinned to the spine for
+  // the lifetime of the current gesture (drag + settle). Set at
+  // pointerdown via `setDragAnchor()`. Cleared when no gesture is active
+  // (start/cancel/completeTurn). When non-null it is forwarded to
+  // `creaseFromDrag()` so the crease's spine intersection cannot drift,
+  // which kills the spine-strip stretch caused by originY drift.
+  private creaseAnchorY: number | null = null;
   private pageWidth: number = 1.0;
   private pageHeight: number = 1.4;
 
@@ -151,6 +159,21 @@ export class BookState {
     return this.dragPoint ? { x: this.dragPoint.x, y: this.dragPoint.y } : null;
   }
 
+  /**
+   * Set the per-gesture spine anchor (y-coordinate in page-local space).
+   * Should be called once at pointerdown with the click's y so the crease
+   * line's spine intersection stays locked for the whole gesture, including
+   * the trailing settle. Pass `null` to clear.
+   */
+  setDragAnchor(anchorY: number | null): void {
+    this.creaseAnchorY = anchorY;
+  }
+
+  /** Read-only accessor for the per-gesture spine anchor (debug/HUD). */
+  getDragAnchor(): number | null {
+    return this.creaseAnchorY;
+  }
+
   /** The corner of the right-page-frame currently being "grabbed" (top-right). */
   private getCorner(): Vec2 {
     return { x: this.pageWidth, y: this.pageHeight / 2 };
@@ -169,6 +192,7 @@ export class BookState {
       this.dragPoint,
       { x: this.pageWidth, y: this.pageHeight },
       this.isReverseTurn,
+      this.creaseAnchorY,
     );
     // phi == dihedral throughout (in both forward and reverse turns).  The
     // dihedral mapping itself is direction-aware (forward uses a pageWidth
@@ -206,6 +230,7 @@ export class BookState {
       drag,
       { x: this.pageWidth, y: this.pageHeight },
       this.isReverseTurn,
+      this.creaseAnchorY,
     );
   }
 
@@ -287,6 +312,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     emitTelemetry('state-transition', { op: 'startTurn', j: this.j, phi: this.phi, isReverseTurn: false });
     return true;
   }
@@ -309,6 +335,7 @@ export class BookState {
     this.isReverseTurn = true;
     this.fanCount = 1;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     emitTelemetry('state-transition', { op: 'startReverseTurn', j: this.j, phi: this.phi, isReverseTurn: true });
     return true;
   }
@@ -333,6 +360,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = count;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     return true;
   }
 
@@ -357,6 +385,7 @@ export class BookState {
     this.isReverseTurn = true;
     this.fanCount = count;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     return true;
   }
 
@@ -458,6 +487,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     emitTelemetry('state-transition', { op: 'completeTurn', j: this.j, phi: this.phi, isReverseTurn: wasReverse });
   }
 
@@ -477,6 +507,7 @@ export class BookState {
     this.isReverseTurn = false;
     this.fanCount = 1;
     this.dragPoint = null;
+    this.creaseAnchorY = null;
     emitTelemetry('state-transition', { op: 'cancelTurn', j: this.j, phi: this.phi, isReverseTurn: wasReverse });
   }
 }

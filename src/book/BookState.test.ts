@@ -926,4 +926,45 @@ describe('BookState - Discrete State Machine (Section 1)', () => {
       });
     });
   });
+
+  describe('Per-gesture spine anchor (Option B fix for issue #78)', () => {
+    it('forwards the anchor to creaseFromDrag so originY is pinned during a tilted drag', () => {
+      const s = new BookState(5);
+      s.setPageSize(1.0, 1.4);
+      expect(s.startTurn()).toBe(true);
+      s.setDragAnchor(0.7);                          // click at top-corner height
+      s.setDragPoint(0.3, -0.3);                     // tilted live cursor
+      const c = s.getCrease();
+      expect(c.originOnEdge.y).toBe(0.7);            // pinned, no tanh drift
+    });
+
+    it('keeps the anchor through a settle (setTurningProgress does not clear it)', () => {
+      const s = new BookState(5);
+      s.setPageSize(1.0, 1.4);
+      s.startTurn();
+      s.setDragAnchor(0.7);
+      s.setTurningProgress(0.5);                     // simulate settle frame
+      expect(s.getDragAnchor()).toBe(0.7);
+      expect(s.getCrease().originOnEdge.y).toBe(0.7);
+    });
+
+    it('clears the anchor on cancelTurn / completeTurn / startTurn', () => {
+      const s = new BookState(5);
+      s.setPageSize(1.0, 1.4);
+      s.startTurn();
+      s.setDragAnchor(0.4);
+      expect(s.getDragAnchor()).toBe(0.4);
+      s.cancelTurn();
+      expect(s.getDragAnchor()).toBeNull();
+
+      s.startTurn();
+      s.setDragAnchor(0.5);
+      s.completeTurn();
+      expect(s.getDragAnchor()).toBeNull();
+
+      s.setDragAnchor(0.6);
+      s.startTurn();                                  // a fresh gesture wipes any stale anchor
+      expect(s.getDragAnchor()).toBeNull();
+    });
+  });
 });

@@ -102,7 +102,7 @@ function fiducialWorldPosition(uAngle, u, v, developable, curlR) {
 }
 
 // ── Crease geometry (mirrors src/book/CreaseGeometry.ts) ────────────────────
-function creaseFromDrag(corner, drag, isReverse) {
+function creaseFromDrag(corner, drag, isReverse, anchorY = null) {
   const W = PAGE_WIDTH, H = PAGE_HEIGHT;
   const dx = drag.x - corner.x;
   const dy = drag.y - corner.y;
@@ -113,13 +113,18 @@ function creaseFromDrag(corner, drag, isReverse) {
   let originY, creaseDirX, creaseDirY;
   const HORIZ_EPS = 0.02 * H;
   if (Math.abs(perpX) < HORIZ_EPS) {
-    originY = corner.y; creaseDirX = 0; creaseDirY = 1;
+    originY = anchorY ?? corner.y; creaseDirX = 0; creaseDirY = 1;
   } else {
-    const Mx = (corner.x + drag.x) / 2;
-    const My = (corner.y + drag.y) / 2;
-    const rawSpineY = My - Mx * perpY / perpX;
-    const limit = H / 2;
-    originY = limit * Math.tanh(rawSpineY / limit);
+    if (anchorY !== null) {
+      // Option B (issue #78): per-gesture spine anchor pins originY exactly.
+      originY = anchorY;
+    } else {
+      const Mx = (corner.x + drag.x) / 2;
+      const My = (corner.y + drag.y) / 2;
+      const rawSpineY = My - Mx * perpY / perpX;
+      const limit = H / 2;
+      originY = limit * Math.tanh(rawSpineY / limit);
+    }
     const len = Math.hypot(perpX, perpY);
     creaseDirX = perpX / len;
     creaseDirY = perpY / len;
@@ -254,12 +259,19 @@ function evaluateScenario(s) {
   // ratio per frame using fiducial-grid chord sums, mirror of approxAreaRatio).
   const widthFrac = FIDUCIAL_US[FIDUCIAL_US.length - 1] - FIDUCIAL_US[0];
 
+  // Per-gesture spine anchor for Option B fix (issue #78). The anchor is
+  // chosen at pointerdown — i.e. it equals the click's y in page-local
+  // coords (clamped to the page interior). Stays constant for the whole
+  // gesture, killing the originY drift that drives the spine-strip stretch.
+  const halfH = PAGE_HEIGHT / 2;
+  const anchorY = Math.max(-halfH, Math.min(halfH, startY));
+
   for (let f = 0; f < FRAMES; f++) {
     const u = f / (FRAMES - 1);
     const tProg = VEL_PROFILES[s.velocity](u);
     const dragX = startX + (endX - startX) * tProg;
     const dragY = startY + (endY - startY) * tProg;
-    const cr = creaseFromDrag(corner, { x: dragX, y: dragY }, isReverse);
+    const cr = creaseFromDrag(corner, { x: dragX, y: dragY }, isReverse, anchorY);
     const phi = cr.dihedral;                    // [0, pi]
     const uAngle = isReverse ? phi : -phi;      // shader convention
     remappedT.push(tProg);

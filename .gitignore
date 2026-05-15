@@ -35,6 +35,10 @@ harness/output/
 contrib/screenshots/*
 !contrib/screenshots/.gitkeep
 
+# DOF sweep output is large (~300 MB jsonl) and regenerated on demand by
+# `npm run dof:sweep`.
+contrib/debug/dof-sweep/
+
 # Mutation testing outputs
 reports/
 .stryker-tmp/

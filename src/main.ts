@@ -17,6 +17,7 @@ import {
   nearestFiducial,
 } from "./book/FiducialPositions";
 import { buildSettingsUrl } from "./settings-url";
+import { applyCameraPreset, cameraPresetFromUrl } from "./camera-presets";
 import {
   aerodynamicSettleEnabled,
   type AeroSettleState,
@@ -180,6 +181,29 @@ class PageTurnDemo {
     this.controls.minPolarAngle  = 0.2;
     this.controls.maxPolarAngle  = 1.65;
     this.controls.target.set(0, 0, 0);
+
+    // Multi-angle capture preset (?camera=top|side-spine|...). Default 'front'
+    // is a no-op — the constructor's set(0, 0.6, 2.6) above is the same pose.
+    // Applied AFTER controls.target.set so OrbitControls picks up the new target.
+    // For non-front presets, relax the polar-angle clamps so 'top' / 'worm' /
+    // 'behind' can actually reach their intended poses (the production clamps
+    // exist to keep the user-facing demo from going under the desk surface).
+    const cameraPreset = cameraPresetFromUrl();
+    if (cameraPreset !== 'front') {
+      this.controls.minPolarAngle = 0;
+      this.controls.maxPolarAngle = Math.PI;
+      this.controls.minDistance = 0.5;
+      this.controls.maxDistance = 20;
+      // Lock the camera entirely. The diagnostic value of multi-angle capture
+      // depends on a STATIC camera; otherwise OrbitControls intercepts any
+      // pointer event whose page-local coordinates don't land on the book in
+      // the off-axis preset (e.g. for the canonical drag at (0.72, 0.18) in
+      // viewport-relative space, the book is OFF that pixel in 'top' / 'worm'
+      // /'behind' views, so OrbitControls grabs the event and orbits — which
+      // makes the resulting screenshot useless as a comparison.)
+      this.controls.enabled = false;
+    }
+    applyCameraPreset(this.camera, this.controls.target, cameraPreset);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
@@ -1197,7 +1221,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Expose the book for the harness (trajectory capture mode). Always
   // attached — guarded behind a non-typical property name to avoid clashing
   // with user-page scripts.
-  (window as unknown as { __pageturn?: { book: Book } }).__pageturn = {
+  (window as unknown as { __pageturn?: { book: Book; camera: THREE.PerspectiveCamera; controlsTarget: THREE.Vector3 } }).__pageturn = {
     book: (demo as unknown as { book: Book }).book,
+    camera: (demo as unknown as { camera: THREE.PerspectiveCamera }).camera,
+    controlsTarget: (demo as unknown as { controls: { target: THREE.Vector3 } }).controls.target,
   };
 });

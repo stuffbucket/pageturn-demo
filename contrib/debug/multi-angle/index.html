@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>multi-angle pivot capture</title>
+<style>
+  body { margin: 0; padding: 24px; background: #12111f; color: #d8e4ff;
+         font: 14px/1.5 -apple-system, system-ui, sans-serif; }
+  h1, h2, h3 { color: #e9f0ff; }
+  h1 { font-size: 22px; margin-top: 0; }
+  h2 { font-size: 18px; margin-top: 32px; }
+  h3 { font-size: 15px; margin: 20px 0 6px; color: #9bc7e8; }
+  p.desc { color: #9bc7e8; margin: 0 0 8px; max-width: 80ch; }
+  .grid { display: grid; gap: 6px; }
+  .grid.by-angle { grid-template-columns: repeat(8, 1fr); }
+  .grid.by-moment { grid-template-columns: repeat(7, 1fr); }
+  figure { margin: 0; }
+  img { width: 100%; height: auto; display: block; border: 1px solid #2a2740; }
+  figcaption { font-size: 11px; color: #6a7898; margin-top: 2px; text-align: center; }
+  nav a { color: #9bc7e8; margin-right: 12px; }
+</style>
+</head>
+<body>
+<h1>multi-angle pivot capture</h1>
+<p>Replay of <code>harness/scenarios/multi-angle-pivot.json</code> (a vertical-biased drag from the top-right corner) seen from 8 camera presets at 7 dihedral checkpoints.</p>
+<p><strong>What to look for in each angle:</strong></p>
+<ul>
+  <li><code>front</code> — Default head-on. Best for back-face bleed and cover gradient continuity. Hides pivot defects and z-axis drift.</li>
+  <li><code>top</code> — Top-down. Spine is a vertical line; off-spine pivot bugs (#68/#76) are immediate.</li>
+  <li><code>side-spine</code> — Spine-edge view. Curl-into-tube shows as a coil; z-axis drift during settle is visible.</li>
+  <li><code>side-corner</code> — Down the drag-axis. Shows whether dihedral aligns with drag direction.</li>
+  <li><code>three-quarter</code> — 30/45 thumbnail angle. Useful default for evidence captures.</li>
+  <li><code>worm</code> — From below. Reveals back-face issues and missing n+1 leaf (#54/#58).</li>
+  <li><code>behind</code> — From behind the spine. Confirms back-face texture sampling and mirror-flip orientation.</li>
+  <li><code>iso</code> — Isometric. Equal-axis foreshortening — best for cross-run side-by-side comparisons.</li>
+</ul>
+
+<nav><a href="#by-moment">by moment</a><a href="#by-angle">by angle</a></nav>
+
+<h2 id="by-moment">grids by moment (one row of all angles per dihedral checkpoint)</h2>
+
+    <section>
+      <h3>moment t=400ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t400.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t400.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t400.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t400.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t400.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t400.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t400.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t400.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=700ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t700.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t700.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t700.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t700.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t700.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t700.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t700.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t700.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=1000ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t1000.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1000.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1000.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1000.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1000.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1000.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1000.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1000.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=1300ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t1300.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1300.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1300.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1300.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1300.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1300.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1300.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1300.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=1600ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t1600.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1600.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1600.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1600.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1600.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1600.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1600.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1600.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=1900ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t1900.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1900.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1900.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1900.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1900.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1900.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1900.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1900.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>moment t=2200ms</h3>
+      <div class="grid by-angle">
+        
+    <figure>
+      <img src="front__t2200.png" alt="front" loading="lazy" />
+      <figcaption>front</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t2200.png" alt="top" loading="lazy" />
+      <figcaption>top</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t2200.png" alt="side-spine" loading="lazy" />
+      <figcaption>side-spine</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t2200.png" alt="side-corner" loading="lazy" />
+      <figcaption>side-corner</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t2200.png" alt="three-quarter" loading="lazy" />
+      <figcaption>three-quarter</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t2200.png" alt="worm" loading="lazy" />
+      <figcaption>worm</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t2200.png" alt="behind" loading="lazy" />
+      <figcaption>behind</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t2200.png" alt="iso" loading="lazy" />
+      <figcaption>iso</figcaption>
+    </figure>
+      </div>
+    </section>
+
+<h2 id="by-angle">grids by angle (one row of all moments per camera angle)</h2>
+
+    <section>
+      <h3>angle front</h3>
+      <p class="desc">Default head-on. Best for back-face bleed and cover gradient continuity. Hides pivot defects and z-axis drift.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="front__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="front__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle top</h3>
+      <p class="desc">Top-down. Spine is a vertical line; off-spine pivot bugs (#68/#76) are immediate.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="top__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="top__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle side-spine</h3>
+      <p class="desc">Spine-edge view. Curl-into-tube shows as a coil; z-axis drift during settle is visible.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="side-spine__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-spine__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle side-corner</h3>
+      <p class="desc">Down the drag-axis. Shows whether dihedral aligns with drag direction.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="side-corner__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="side-corner__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle three-quarter</h3>
+      <p class="desc">30/45 thumbnail angle. Useful default for evidence captures.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="three-quarter__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="three-quarter__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle worm</h3>
+      <p class="desc">From below. Reveals back-face issues and missing n+1 leaf (#54/#58).</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="worm__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="worm__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle behind</h3>
+      <p class="desc">From behind the spine. Confirms back-face texture sampling and mirror-flip orientation.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="behind__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="behind__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+
+    <section>
+      <h3>angle iso</h3>
+      <p class="desc">Isometric. Equal-axis foreshortening — best for cross-run side-by-side comparisons.</p>
+      <div class="grid by-moment">
+        
+    <figure>
+      <img src="iso__t400.png" alt="t=400ms" loading="lazy" />
+      <figcaption>t=400ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t700.png" alt="t=700ms" loading="lazy" />
+      <figcaption>t=700ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1000.png" alt="t=1000ms" loading="lazy" />
+      <figcaption>t=1000ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1300.png" alt="t=1300ms" loading="lazy" />
+      <figcaption>t=1300ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1600.png" alt="t=1600ms" loading="lazy" />
+      <figcaption>t=1600ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t1900.png" alt="t=1900ms" loading="lazy" />
+      <figcaption>t=1900ms</figcaption>
+    </figure>
+    <figure>
+      <img src="iso__t2200.png" alt="t=2200ms" loading="lazy" />
+      <figcaption>t=2200ms</figcaption>
+    </figure>
+      </div>
+    </section>
+</body>
+</html>

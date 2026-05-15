@@ -17,7 +17,8 @@
     "docs:preview": "cd docs-site && npm run preview",
     "narrative:pr59": "node scripts/narrative-video/build-story.mjs",
     "dof:sweep": "node scripts/dof-sweep.mjs",
-    "dof:sweep:quick": "node scripts/dof-sweep.mjs --quick"
+    "dof:sweep:quick": "node scripts/dof-sweep.mjs --quick",
+    "multi-angle:capture": "node scripts/multi-angle-capture.mjs"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

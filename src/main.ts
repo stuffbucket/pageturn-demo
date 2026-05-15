@@ -459,6 +459,17 @@ class PageTurnDemo {
     this.controls.enabled = false;
     this.renderer.domElement.setPointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'grabbing';
+
+    // Option B fix for issue #78: lock the crease line's spine intersection
+    // to the click's y for the entire gesture (drag + settle). This prevents
+    // the originY drift that, combined with the spine-pin guard in
+    // FLIP_VERT, produced unbounded spine-strip stretch only while the
+    // mouse button was down. The crease line still tilts directionally with
+    // the drag — only its spine pivot is fixed. Clamp to page interior so
+    // the anchor never sits outside the rendered page.
+    const halfH = this.book.getPageHeight() / 2;
+    const anchorY = Math.max(-halfH, Math.min(halfH, wp.y));
+    this.book.getState().setDragAnchor(anchorY);
     emitTelemetry('drag-start', {
       dragPoint: { x: wx, y: wp.y },
       dragProgress: 0,

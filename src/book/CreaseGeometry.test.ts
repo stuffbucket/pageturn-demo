@@ -206,3 +206,54 @@ describe('creaseFromDrag — dihedral mapping (reverse)', () => {
     expect(samples[samples.length - 1]).toBeCloseTo(0, 9);
   });
 });
+
+describe('creaseFromDrag — Option B per-gesture spine anchor (issue #78)', () => {
+  it('pins originOnEdge.y exactly to the supplied anchor (no tanh drift)', () => {
+    const drag: Vec2 = { x: 0.3, y: -0.3 };       // tilted drag, would drift
+    const anchor = 0.25;                           // arbitrary anchor on spine
+    const c = creaseFromDrag(CORNER, drag, PAGE, false, anchor);
+    expect(c.originOnEdge.x).toBe(0);
+    expect(c.originOnEdge.y).toBe(anchor);
+  });
+
+  it('preserves crease tilt direction (creaseDir.y < 1 for tilted drags)', () => {
+    // The whole point of Option B (vs Option A): the crease still tilts.
+    const drag: Vec2 = { x: 0.3, y: -0.3 };
+    const c = creaseFromDrag(CORNER, drag, PAGE, false, CORNER.y);
+    expect(c.creaseDir.y).toBeLessThan(1);
+    expect(Math.abs(c.creaseDir.x)).toBeGreaterThan(0);
+  });
+
+  it('originY = anchor regardless of drag y (no drift across a drag arc)', () => {
+    const anchor = CORNER.y;     // typical: anchor matches click at corner
+    const samples: Vec2[] = [
+      { x: 0.5, y: 0 },
+      { x: 0.3, y: -0.3 },
+      { x: 0.0, y: -0.5 },
+      { x: -0.5, y: -0.5 },
+    ];
+    for (const drag of samples) {
+      const c = creaseFromDrag(CORNER, drag, PAGE, false, anchor);
+      expect(c.originOnEdge.y).toBe(anchor);
+    }
+  });
+
+  it('horizontal-drag fast path also honors the anchor', () => {
+    const anchor = -0.2;
+    const drag: Vec2 = { x: 0.5, y: CORNER.y };  // dy = 0 exactly
+    const c = creaseFromDrag(CORNER, drag, PAGE, false, anchor);
+    expect(c.originOnEdge.y).toBe(anchor);
+    // Crease still degenerates to spine-aligned (creaseDir = (0,1)).
+    expect(c.creaseDir.x).toBe(0);
+    expect(c.creaseDir.y).toBe(1);
+  });
+
+  it('falls back to legacy tanh behavior when anchor is null/omitted', () => {
+    const drag: Vec2 = { x: 0.3, y: -0.3 };
+    const c1 = creaseFromDrag(CORNER, drag, PAGE);
+    const c2 = creaseFromDrag(CORNER, drag, PAGE, false, null);
+    expect(c1.originOnEdge.y).toBe(c2.originOnEdge.y);
+    // And the legacy result is NOT equal to corner.y (it drifted).
+    expect(Math.abs(c1.originOnEdge.y - CORNER.y)).toBeGreaterThan(1e-3);
+  });
+});

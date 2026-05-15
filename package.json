@@ -15,7 +15,9 @@
     "docs:dev": "cd docs-site && npm run dev",
     "docs:build": "cd docs-site && npm run build",
     "docs:preview": "cd docs-site && npm run preview",
-    "narrative:pr59": "node scripts/narrative-video/build-story.mjs"
+    "narrative:pr59": "node scripts/narrative-video/build-story.mjs",
+    "dof:sweep": "node scripts/dof-sweep.mjs",
+    "dof:sweep:quick": "node scripts/dof-sweep.mjs --quick"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

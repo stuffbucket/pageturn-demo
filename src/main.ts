@@ -10,7 +10,12 @@ import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
 import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
 import { installLongPressCapture, captureEnabled, setCaptureRuntimeEnabled, type StateSnapshot } from "./long-press-capture";
-import { developableEnabled } from "./book/DevelopableSurface";
+import { developableEnabled, DEFAULT_EXEMPTION_HALF_WIDTH } from "./book/DevelopableSurface";
+import {
+  sampleAllFiducials,
+  approxAreaRatio,
+  nearestFiducial,
+} from "./book/FiducialPositions";
 import { buildSettingsUrl } from "./settings-url";
 import {
   aerodynamicSettleEnabled,
@@ -110,6 +115,14 @@ class PageTurnDemo {
   private cameraReturnStart = new THREE.Vector3();
   private cameraReturnTargetStart = new THREE.Vector3();
   private cameraReturnProgress = 0;
+
+  // ── Diagnostics: per-frame fiducial sampling cadence ──────────────────────
+  // (see docs/diagnostic-2026-05-14.md). We sample at 1 Hz during a turn so
+  // the telemetry log can be replayed against the analytic baseline without
+  // dominating the JSONL stream. Last-sample is also embedded in the
+  // long-press capture sidecar.
+  private lastDiagnosticSampleMs = 0;
+  private latestDragOriginFiducial: { i: number; j: number; du: number; dv: number } | null = null;
 
   // ── Debug HUD ──────────────────────────────────────────────────────────────
   private debugHud: DebugHud | null = null;
@@ -228,6 +241,35 @@ class PageTurnDemo {
     this.prevTimestamp = performance.now();
     this.animate();
     window.addEventListener('resize', () => this.onWindowResize());
+  }
+
+  /**
+   * Build a diagnostic sample (fiducial grid + FR-P1 area ratio) from the
+   * live BookState. Cheap (~35 trig evals + 28 chord lengths). Returns
+   * null when no turn is in progress — the static spread doesn't have a
+   * meaningful "turning page".
+   *
+   * Added 2026-05-14 as part of the bleed-through / settle-asymmetry /
+   * stretch diagnostic work. See docs/diagnostic-2026-05-14.md.
+   */
+  private buildDiagnosticSample(): {
+    fiducials: ReturnType<typeof sampleAllFiducials>;
+    areaRatio: number;
+    bendAmount: number;
+  } | null {
+    const state = this.book.getState();
+    if (!state.getIsTurning()) return null;
+    const uAngle = -state.getRotationAngle();
+    const developable = this.book.isDevelopable();
+    const stock = this.book.getPageStock();
+    const curlR = developable ? stock.R_min : 1e6;
+    const exempt = DEFAULT_EXEMPTION_HALF_WIDTH * this.book.getPageWidth();
+    const opts = { uAngle, developable, curlR, exempt };
+    return {
+      fiducials: sampleAllFiducials(opts),
+      areaRatio: approxAreaRatio(opts),
+      bendAmount: this.book.getBendAmount(),
+    };
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -424,6 +466,31 @@ class PageTurnDemo {
       reverse: this.dragReverse,
       j: this.book.getState().getStateIndex(),
     });
+
+    // Diagnostic: snapshot the (i,j) of the nearest fiducial to the drag
+    // origin in page-local UV space, plus the residual offset. The
+    // diagnostic report (docs/diagnostic-2026-05-14.md) hypothesizes the
+    // page-stretching defect is sensitive to whether the drag origin sits
+    // ON a vertex row vs. between rows; this event lets the heat map
+    // separate those cases.
+    const W = this.dragPageWidth;
+    const H = this.book.getPageHeight();
+    // Convert world drag-start point → page-local UV in [0,1].
+    // Forward turns drag the +x flap (uOrigin = wx/W); reverse turns drag
+    // the -x flap (uOrigin = -wx/W). v is shared.
+    const uOrigin = (this.dragReverse ? -wx : wx) / W;
+    const vOrigin = wp.y / H + 0.5;
+    const nf = nearestFiducial(uOrigin, vOrigin);
+    this.latestDragOriginFiducial = nf;
+    emitTelemetry('drag-origin-fiducial', {
+      i: nf.i,
+      j: nf.j,
+      du: nf.du,
+      dv: nf.dv,
+      uOrigin,
+      vOrigin,
+      reverse: this.dragReverse,
+    });
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -571,6 +638,34 @@ class PageTurnDemo {
         phiDot: phiDot0,
         dir: this.aeroSettleDir,
       });
+      // Diagnostic: full pre-settle snapshot + the symmetric mirror — the
+      // values phi/phiDot/b/bDot/dir would have if the gesture had been
+      // mirrored across the spine. The diff between observed vs mirrored
+      // outcomes is the asymmetry signal called out by the user.
+      // (docs/diagnostic-2026-05-14.md hypothesis 2.)
+      emitTelemetry('pre-settle-state', {
+        observed: {
+          phi: phi0,
+          phiDot: phiDot0,
+          b: this.aeroSettle.b,
+          bDot: this.aeroSettle.bDot,
+          dir: this.aeroSettleDir,
+          target,
+          reverse,
+        },
+        mirror: {
+          // Mirroring across the spine swaps reverse, flips dir, and
+          // reflects phi about π/2 only when the dihedral's geometric role
+          // changes. For the aero settle dir is the relevant flip.
+          phi: Math.PI - phi0,
+          phiDot: -phiDot0,
+          b: this.aeroSettle.b,
+          bDot: this.aeroSettle.bDot,
+          dir: -this.aeroSettleDir as 1 | -1,
+          target,
+          reverse: !reverse,
+        },
+      });
       return;
     }
 
@@ -670,6 +765,7 @@ class PageTurnDemo {
     const state = this.book.getState();
     const c = state.getCrease();
     const dp = state.getDragPoint();
+    const diag = this.buildDiagnosticSample();
     return {
       drag: {
         isDragging: this.dragging,
@@ -699,6 +795,15 @@ class PageTurnDemo {
       },
       fps: this.fps,
       build: buildInfo,
+      diagnostics: diag ? {
+        fiducials: diag.fiducials.map((f) => ({
+          id: f.id, i: f.i, j: f.j, u: f.u, v: f.v,
+          pos: { x: f.pos.x, y: f.pos.y, z: f.pos.z },
+        })),
+        areaRatio: diag.areaRatio,
+        bendAmount: diag.bendAmount,
+        dragOriginFiducial: this.latestDragOriginFiducial,
+      } : undefined,
     };
   }
 
@@ -776,6 +881,8 @@ class PageTurnDemo {
         this.book.setBendAmount(this.aeroSettle.b);
 
         if (aeroConverged(this.aeroSettle, this.aeroSettleDir)) {
+          // Capture pre-snap state for the diagnostic post-settle event.
+          const finalPhi = this.aeroSettle.phi;
           // Snap φ to the exact equilibrium so the hand-off to the static
           // spread mesh is C0-continuous (FR-4.3).
           this.dragProgress = this.settleTarget;
@@ -787,6 +894,15 @@ class PageTurnDemo {
           if (this.settleTarget >= 1) this.book.completeTurn();
           else                         this.book.cancelTurn();
           emitTelemetry('settle-end', { mode: 'aero', target: this.settleTarget });
+          // Diagnostic post-settle snapshot. Lets the diagnostic report
+          // diff observed vs. analytic-ideal trajectory tails.
+          emitTelemetry('post-settle-state', {
+            mode: 'aero',
+            target: this.settleTarget,
+            reverse: this.book.getState().getIsReverseTurn(),
+            finalPhi,
+            finalB: DEFAULT_AERO_PARAMS.b0,
+          });
           this.checkVideoSpread();
           this.announcePageChange();
           this.updateUI();
@@ -836,6 +952,32 @@ class PageTurnDemo {
       emitTelemetry('fps-sample', { fps: Math.round(this.fps * 10) / 10 });
     }
 
+    // ── Diagnostic 1 Hz sampler ─────────────────────────────────────────────
+    // (docs/diagnostic-2026-05-14.md) Emit `fiducial-positions` and
+    // `surface-area-sample` while a turn is active so the JSONL stream is
+    // a self-contained ground truth for FR-P1 verification — no GPU
+    // readback or harness re-run required.
+    if (fpsNow - this.lastDiagnosticSampleMs >= 1000) {
+      const diag = this.buildDiagnosticSample();
+      if (diag) {
+        emitTelemetry('fiducial-positions', {
+          phi: this.book.getState().getRotationAngle(),
+          progress: this.book.getState().getTurningProgress(),
+          reverse: this.book.getState().getIsReverseTurn(),
+          fiducials: diag.fiducials.map((f) => ({
+            id: f.id, i: f.i, j: f.j,
+            x: f.pos.x, y: f.pos.y, z: f.pos.z,
+          })),
+        });
+        emitTelemetry('surface-area-sample', {
+          phi: this.book.getState().getRotationAngle(),
+          areaRatio: diag.areaRatio,
+          bend: diag.bendAmount,
+        });
+        this.lastDiagnosticSampleMs = fpsNow;
+      }
+    }
+
     // Camera animation for video spread
     this.updateCameraAnimation(dt);
 
@@ -860,6 +1002,7 @@ class PageTurnDemo {
         fps: this.fps,
         camera: this.camera,
         controlsTarget: this.debugScratchTarget.copy(this.controls.target),
+        dragOriginFiducial: this.latestDragOriginFiducial,
       });
     }
   };

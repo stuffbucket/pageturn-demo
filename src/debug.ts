@@ -18,6 +18,10 @@ import type * as THREE from 'three';
 import QRCode from 'qrcode';
 import { buildInfo } from 'virtual:build-info';
 import type { Book } from './book/Book';
+import {
+  approxAreaRatio,
+} from './book/FiducialPositions';
+import { DEFAULT_EXEMPTION_HALF_WIDTH } from './book/DevelopableSurface';
 
 /** Whether the ?debug=1 URL flag is set. */
 export function debugEnabled(): boolean {
@@ -40,6 +44,12 @@ export interface DebugSnapshot {
   fps: number;
   camera: THREE.PerspectiveCamera;
   controlsTarget: THREE.Vector3;
+  /**
+   * Optional drag-origin fiducial info (set by main.ts after drag-start).
+   * Lets the HUD show "drag started at fiducial (i,j) + delta"; helpful for
+   * the diagnostic in docs/diagnostic-2026-05-14.md.
+   */
+  dragOriginFiducial?: { i: number; j: number; du: number; dv: number } | null;
 }
 
 const fmt = (n: number, p = 3): string => {
@@ -316,12 +326,40 @@ export class DebugHud {
     const tgt = snap.controlsTarget;
 
     // Build a single string per tick (no DOM allocations beyond textContent).
+    // ── FR-P1 area ratio (live, color-coded) ─────────────────────────────────
+    // The user's diagnostic ask: "Live FR-P1 number (area ratio, color-coded
+    // green/yellow/red)". We compute the ratio from the same analytic
+    // function that drives the harness baselines so HUD and offline
+    // analysis agree to the bit (see docs/diagnostic-2026-05-14.md).
+    let areaRatioText = '—';
+    let areaRatioColor = '#9aa6c2';
+    if (isTurning) {
+      const opts = {
+        uAngle: -phi,
+        developable: this.book.isDevelopable(),
+        curlR: this.book.isDevelopable() ? this.book.getPageStock().R_min : 1e6,
+        exempt: DEFAULT_EXEMPTION_HALF_WIDTH * this.book.getPageWidth(),
+      };
+      const r = approxAreaRatio(opts);
+      areaRatioText = r.toFixed(4);
+      const dev = Math.abs(r - 1);
+      // Bands per docs/prd-page-model.md: 1% green, 5% yellow, >5% red.
+      if (dev > 0.05) areaRatioColor = '#ff7676';
+      else if (dev > 0.01) areaRatioColor = '#ffd479';
+      else areaRatioColor = '#7ee787';
+    }
+    const fid = snap.dragOriginFiducial;
+    const fidText = fid
+      ? `(${fid.i},${fid.j})  du=${fmt(fid.du)} dv=${fmt(fid.dv)}`
+      : '—';
+
     this.body.textContent =
 `Drag
   isDragging   ${snap.isDragging}
   dragPoint    ${dp}
   dragProgress ${fmt(snap.dragProgress)}
   dragVelocity ${fmt(snap.dragVelocity)}
+  origin fid   ${fidText}
 
 Crease
   alpha        ${fmt(c.alpha)} rad  (${rad2deg(c.alpha)} deg)
@@ -339,10 +377,19 @@ Turn state
   settling     ${snap.settling}
   settleTarget ${snap.settleTarget}
 
+Diagnostics
+  FR-P1 area   ${areaRatioText}
+
 Camera
   pos  (${fmt(cam.x)}, ${fmt(cam.y)}, ${fmt(cam.z)})
   tgt  (${fmt(tgt.x)}, ${fmt(tgt.y)}, ${fmt(tgt.z)})
 
 FPS  ${Math.round(snap.fps)}`;
+    // Color the FR-P1 line by spanning a child element. textContent above
+    // wipes any prior children, so re-attach a styled span if we want color
+    // coding. Cheaper alternative: tint the entire body and let the eye do
+    // the work.
+    this.body.style.borderLeft = isTurning ? `3px solid ${areaRatioColor}` : 'none';
+    this.body.style.paddingLeft = isTurning ? '6px' : '0';
   }
 }

@@ -259,12 +259,16 @@ function evaluateScenario(s) {
   // ratio per frame using fiducial-grid chord sums, mirror of approxAreaRatio).
   const widthFrac = FIDUCIAL_US[FIDUCIAL_US.length - 1] - FIDUCIAL_US[0];
 
-  // Per-gesture spine anchor for Option B fix (issue #78). The anchor is
-  // chosen at pointerdown — i.e. it equals the click's y in page-local
-  // coords (clamped to the page interior). Stays constant for the whole
-  // gesture, killing the originY drift that drives the spine-strip stretch.
+  // Per-gesture spine anchor, refined per PR #84 photo analysis: blend
+  // toward mid-spine (y=0) when the grab is far from the spine. Mirrors
+  // `computeGestureAnchorY` in src/book/CreaseGeometry.ts.
   const halfH = PAGE_HEIGHT / 2;
-  const anchorY = Math.max(-halfH, Math.min(halfH, startY));
+  const ANCHOR_BLEND_DIST = 0.3;        // fraction of pageWidth
+  const clampedY = Math.max(-halfH, Math.min(halfH, startY));
+  const distFromSpine = Math.min(1, Math.abs(startX) / PAGE_WIDTH);
+  const t = Math.max(0, Math.min(1, distFromSpine / ANCHOR_BLEND_DIST));
+  const blend = t * t * (3 - 2 * t);    // GLSL smoothstep
+  const anchorY = clampedY * (1 - blend);
 
   for (let f = 0; f < FRAMES; f++) {
     const u = f / (FRAMES - 1);

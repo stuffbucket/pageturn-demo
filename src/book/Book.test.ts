@@ -190,6 +190,80 @@ describe('Book - Integration Tests', () => {
     });
   });
 
+  describe('Turning page front/back texture binding (regression)', () => {
+    // Regression for the 2026-05-15 bug where the back face of the turning
+    // page rendered the (mirrored) front texture instead of the back
+    // texture. Root cause: Three.js implements `side: BackSide` by calling
+    // `gl.frontFace(gl.CW)`, which makes gl_FrontFacing evaluate to TRUE
+    // inside the back-mesh draw. The original FLIP_FRAG branched on
+    // gl_FrontFacing, so the back mesh sampled frontTexture too. Fix
+    // switches to a static IS_BACK shader define on the back material.
+    function getTurningMeshes(): { front: THREE.Mesh; back: THREE.Mesh } {
+      const group = book.getGroup();
+      let front: THREE.Mesh | null = null;
+      group.traverse((node) => {
+        if (
+          !front &&
+          node instanceof THREE.Mesh &&
+          (node.material as THREE.ShaderMaterial).isShaderMaterial &&
+          ((node.material as THREE.ShaderMaterial).uniforms as Record<string, THREE.IUniform>)
+            .frontTexture !== undefined
+        ) {
+          front = node;
+        }
+      });
+      if (!front) throw new Error('turning front mesh not found');
+      const f = front as THREE.Mesh;
+      const back = f.children.find(
+        (c) => c instanceof THREE.Mesh,
+      ) as THREE.Mesh | undefined;
+      if (!back) throw new Error('turning back mesh not found');
+      return { front: f, back };
+    }
+
+    it('front mesh uses FrontSide and binds frontTexture, back mesh uses BackSide with IS_BACK define and binds backTexture', () => {
+      book.startTurn();
+      book.updateTurningPage(0.3);
+
+      const { front, back } = getTurningMeshes();
+      const fMat = front.material as THREE.ShaderMaterial;
+      const bMat = back.material as THREE.ShaderMaterial;
+
+      expect(fMat.side).toBe(THREE.FrontSide);
+      expect(bMat.side).toBe(THREE.BackSide);
+
+      // The IS_BACK define is what guarantees the back mesh samples
+      // backTexture independent of gl_FrontFacing's BackSide-flip behavior.
+      expect(fMat.defines?.IS_BACK).toBeUndefined();
+      expect(bMat.defines?.IS_BACK).toBeDefined();
+
+      // Both materials share uniforms, but assert both textures are bound
+      // and distinct (different content per face).
+      const fTex = fMat.uniforms.frontTexture.value as THREE.Texture | null;
+      const bTex = fMat.uniforms.backTexture.value as THREE.Texture | null;
+      expect(fTex).not.toBeNull();
+      expect(bTex).not.toBeNull();
+      expect(fTex).not.toBe(bTex);
+
+      // Back material sees the same uniforms object.
+      expect(bMat.uniforms.frontTexture.value).toBe(fTex);
+      expect(bMat.uniforms.backTexture.value).toBe(bTex);
+    });
+
+    it('FLIP_FRAG sources the back texture only via the IS_BACK define, never via gl_FrontFacing', () => {
+      book.startTurn();
+      book.updateTurningPage(0.3);
+      const { front, back } = getTurningMeshes();
+      const fMat = front.material as THREE.ShaderMaterial;
+      const bMat = back.material as THREE.ShaderMaterial;
+      // Both materials share the same fragment shader source. Guard against
+      // a regression that re-introduces the gl_FrontFacing branch.
+      expect(fMat.fragmentShader).toBe(bMat.fragmentShader);
+      expect(fMat.fragmentShader).not.toMatch(/gl_FrontFacing/);
+      expect(fMat.fragmentShader).toMatch(/#ifdef\s+IS_BACK/);
+    });
+  });
+
   describe('Error Handling', () => {
     it('handles rapid succession turns gracefully', () => {
       // Try starting turn while already turning - should be prevented

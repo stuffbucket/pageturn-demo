@@ -215,16 +215,30 @@ const FLIP_VERT = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
+// Texture selection is driven by the IS_BACK shader define rather than by
+// gl_FrontFacing. Three.js implements `side: BackSide` by calling
+// `gl.frontFace(gl.CW)`, which causes gl_FrontFacing to evaluate to TRUE
+// inside the back-mesh draw — the originally back-facing triangles are
+// reclassified as "front" by the flipped winding. The previous shader's
+// `if (gl_FrontFacing)` branch therefore always picked frontTexture in the
+// back-mesh pass, so the back face rendered the (mirrored) front texture
+// instead of the actual back texture (regression evidenced by the
+// 2026-05-15 captures of the WANDERLUST cover during a forward turn).
+//
+// The split front/back-mesh pair already partitions the pixels: at any
+// given pixel, only one of the two materials draws the fragment. So the
+// back mesh always wants backTexture (mirrored) and the front mesh always
+// wants frontTexture. A static define is the simplest correct switch.
 const FLIP_FRAG = /* glsl */`
   uniform sampler2D frontTexture;
   uniform sampler2D backTexture;
   varying vec2 vUv;
   void main() {
-    if (gl_FrontFacing) {
-      gl_FragColor = texture2D(frontTexture, vUv);
-    } else {
+    #ifdef IS_BACK
       gl_FragColor = texture2D(backTexture, vec2(1.0 - vUv.x, vUv.y));
-    }
+    #else
+      gl_FragColor = texture2D(frontTexture, vUv);
+    #endif
     #include <colorspace_fragment>
   }
 `;
@@ -528,6 +542,7 @@ export class Book {
       uniforms:       sharedUniforms,
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
+      defines:        { IS_BACK: '' },
       side: THREE.BackSide,
     });
 
@@ -929,6 +944,7 @@ export class Book {
       uniforms:       sharedUniforms,
       vertexShader:   FLIP_VERT,
       fragmentShader: FLIP_FRAG,
+      defines:        { IS_BACK: '' },
       side: THREE.BackSide,
     });
 

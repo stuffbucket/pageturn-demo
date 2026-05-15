@@ -1,0 +1,20 @@
+{
+  "name": "multi-angle-pivot",
+  "viewport": { "width": 800, "height": 600 },
+  "duration": 4500,
+  "fps": 30,
+  "cursorOverlay": true,
+  "_notes": "Vertical-biased drag from the top-right corner that surfaces the originY-mouse-follow / off-spine pivot bug from issue #76 (canonical (0.5, +/-0.4) drag from top-corner). Replayed once per camera preset by scripts/multi-angle-capture.mjs to produce a 7x8 grid of moment-vs-angle.",
+  "events": [
+    { "t":  300, "type": "pointerdown", "x": 0.72, "y": 0.18 },
+    { "t":  500, "type": "pointermove", "x": 0.66, "y": 0.30 },
+    { "t":  800, "type": "pointermove", "x": 0.58, "y": 0.46 },
+    { "t": 1100, "type": "pointermove", "x": 0.50, "y": 0.58 },
+    { "t": 1400, "type": "pointermove", "x": 0.42, "y": 0.66 },
+    { "t": 1700, "type": "pointermove", "x": 0.34, "y": 0.74 },
+    { "t": 2000, "type": "pointermove", "x": 0.28, "y": 0.80 },
+    { "t": 2300, "type": "pointermove", "x": 0.24, "y": 0.84 },
+    { "t": 2400, "type": "pointerup",   "x": 0.24, "y": 0.84 }
+  ],
+  "_dihedralCheckpointsMs": [400, 700, 1000, 1300, 1600, 1900, 2200]
+}

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css'
 import { Book } from './book/Book';
+import { computeGestureAnchorY } from './book/CreaseGeometry';
 import { getVimeoVideo, fiducialsEnabled } from "./textures/atlas";
 import { emit as emitTelemetry, installErrorReporting } from "./telemetry";
 import { DebugHud, debugEnabled } from "./debug";
@@ -484,15 +485,18 @@ class PageTurnDemo {
     this.renderer.domElement.setPointerCapture(e.pointerId);
     this.renderer.domElement.style.cursor = 'grabbing';
 
-    // Option B fix for issue #78: lock the crease line's spine intersection
-    // to the click's y for the entire gesture (drag + settle). This prevents
-    // the originY drift that, combined with the spine-pin guard in
-    // FLIP_VERT, produced unbounded spine-strip stretch only while the
-    // mouse button was down. The crease line still tilts directionally with
-    // the drag — only its spine pivot is fixed. Clamp to page interior so
-    // the anchor never sits outside the rendered page.
-    const halfH = this.book.getPageHeight() / 2;
-    const anchorY = Math.max(-halfH, Math.min(halfH, wp.y));
+    // Option B fix for issue #78 (PR #82): lock the crease line's spine
+    // intersection to a per-gesture anchor chosen at pointerdown. PR #84's
+    // 29-frame photo analysis refines the mapping: real paper sits near
+    // mid-spine for almost every grab, and the spine intersection only
+    // follows the cursor when the user grabs near the spine itself.
+    // `computeGestureAnchorY` blends between cursor.y (grab at spine) and
+    // 0 (grab at far edge) via smoothstep on |wx|/W. See
+    // `src/book/CreaseGeometry.ts` for the formula + threshold rationale.
+    const anchorY = computeGestureAnchorY(
+      { x: wx, y: wp.y },
+      { x: this.dragPageWidth, y: this.book.getPageHeight() },
+    );
     this.book.getState().setDragAnchor(anchorY);
     emitTelemetry('drag-start', {
       dragPoint: { x: wx, y: wp.y },

@@ -5,8 +5,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   creaseFromDrag,
+  computeGestureAnchorY,
   reflectAcrossLine,
   wrapAngle,
+  ANCHOR_BLEND_DIST,
   type Vec2,
 } from './CreaseGeometry';
 
@@ -255,5 +257,82 @@ describe('creaseFromDrag — Option B per-gesture spine anchor (issue #78)', () 
     expect(c1.originOnEdge.y).toBe(c2.originOnEdge.y);
     // And the legacy result is NOT equal to corner.y (it drifted).
     expect(Math.abs(c1.originOnEdge.y - CORNER.y)).toBeGreaterThan(1e-3);
+  });
+});
+
+describe('computeGestureAnchorY — mid-spine blend (PR #84)', () => {
+  // 29-frame photo analysis (PR #84) showed corner pinches still produce
+  // near-mid-spine creases; only grabs near the spine itself pivot through
+  // the grab point. These tests pin the blend's edge cases.
+  const PAGE_AB: Vec2 = { x: 1.0, y: 1.4 };
+  const TOP_Y = 0.6;
+
+  it('grab at the spine → anchor follows cursor y exactly', () => {
+    const a = computeGestureAnchorY({ x: 0, y: TOP_Y }, PAGE_AB);
+    expect(a).toBeCloseTo(TOP_Y, 12);
+  });
+
+  it('grab at the corner → anchor is mid-spine (y=0)', () => {
+    const a = computeGestureAnchorY({ x: PAGE_AB.x, y: TOP_Y }, PAGE_AB);
+    expect(a).toBe(0);
+  });
+
+  it('grab just inside the blend threshold returns a partial blend', () => {
+    const halfThresh = (ANCHOR_BLEND_DIST / 2) * PAGE_AB.x;
+    const a = computeGestureAnchorY({ x: halfThresh, y: TOP_Y }, PAGE_AB);
+    // smoothstep(0, 0.3, 0.15) = smoothstep(0,1,0.5) = 0.5
+    // So anchor = TOP_Y * (1 - 0.5) = TOP_Y / 2.
+    expect(a).toBeCloseTo(TOP_Y / 2, 9);
+  });
+
+  it('grab at threshold or beyond fully blends to mid-spine', () => {
+    const atEdge = computeGestureAnchorY(
+      { x: ANCHOR_BLEND_DIST * PAGE_AB.x, y: TOP_Y },
+      PAGE_AB,
+    );
+    expect(atEdge).toBe(0);
+    const past = computeGestureAnchorY(
+      { x: 0.6 * PAGE_AB.x, y: TOP_Y },
+      PAGE_AB,
+    );
+    expect(past).toBe(0);
+  });
+
+  it('grab in-between sits strictly between cursor y and 0', () => {
+    const a = computeGestureAnchorY({ x: 0.05 * PAGE_AB.x, y: TOP_Y }, PAGE_AB);
+    expect(a).toBeGreaterThan(0);
+    expect(a).toBeLessThan(TOP_Y);
+  });
+
+  it('cursor y = 0 → anchor 0 regardless of grab position (degenerate)', () => {
+    for (const x of [0, 0.05, 0.3, 0.7, 1.0]) {
+      const a = computeGestureAnchorY({ x: x * PAGE_AB.x, y: 0 }, PAGE_AB);
+      expect(a).toBe(0);
+    }
+  });
+
+  it('symmetric under sign(wp.x): forward and reverse drags match in |anchor|', () => {
+    for (const fracX of [0.05, 0.15, 0.5]) {
+      const aF = computeGestureAnchorY({ x:  fracX * PAGE_AB.x, y: TOP_Y }, PAGE_AB);
+      const aR = computeGestureAnchorY({ x: -fracX * PAGE_AB.x, y: TOP_Y }, PAGE_AB);
+      expect(aF).toBeCloseTo(aR, 12);
+    }
+  });
+
+  it('clamps cursor y to ±H/2 before blending (no off-page anchor)', () => {
+    // wp.y past the page top — anchor at spine should still be H/2, not wp.y.
+    const halfH = PAGE_AB.y / 2;
+    const a = computeGestureAnchorY({ x: 0, y: 2 * halfH }, PAGE_AB);
+    expect(a).toBeCloseTo(halfH, 12);
+  });
+
+  it('blendDist override is honored', () => {
+    // Tighter blend → corner-region grabs hit mid-spine sooner.
+    const a = computeGestureAnchorY(
+      { x: 0.1 * PAGE_AB.x, y: TOP_Y },
+      PAGE_AB,
+      0.05,            // very tight blend
+    );
+    expect(a).toBe(0);
   });
 });

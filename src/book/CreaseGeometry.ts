@@ -83,6 +83,75 @@ export interface Crease {
 
 const TAU = Math.PI * 2;
 
+/**
+ * Default blend distance (as a fraction of `pageWidth`) for the
+ * mid-spine anchor blend in `computeGestureAnchorY`. When the grab is
+ * closer to the spine than this distance the anchor follows the cursor
+ * y exactly; beyond this distance it smoothly blends toward the
+ * mid-spine (y = 0). The value `0.3` is heuristic — chosen so that
+ * grabs within the inner third of the page still feel pivot-through-
+ * grab while corner-region pinches behave like a mid-spine crease.
+ *
+ * See real-paper photo analysis in PR #84:
+ * https://github.com/stuffbucket/pageturn-demo/pull/84
+ * Verdict (verbatim): "corner-pinches still produce mid-spine creases."
+ */
+export const ANCHOR_BLEND_DIST = 0.3;
+
+/** Clamp `x` to `[a, b]`. */
+function clamp(x: number, a: number, b: number): number {
+  return Math.max(a, Math.min(b, x));
+}
+
+/** GLSL-style smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Choose the per-gesture spine anchor y for the crease line, given the
+ * pointerdown world point in page-local 2D coords.
+ *
+ * Real-paper analysis (29 photo frames, summarised in PR #84) shows that
+ * the crease's intersection with the spine sits near mid-spine for
+ * almost every grab — even corner pinches produce a near-mid-spine
+ * crease. The anchor only follows the cursor y when the user grabs near
+ * the spine itself (where there's no leverage to pull the crease
+ * away from the bound edge).
+ *
+ * The mapping blends between two extremes:
+ *
+ *   • grab at the spine     (|wp.x| ≈ 0)   → anchor = clamp(wp.y)
+ *   • grab at the far edge  (|wp.x| ≈ W)   → anchor = 0  (mid-spine)
+ *
+ * The interpolation uses GLSL smoothstep over `[0, ANCHOR_BLEND_DIST]`
+ * of `|wp.x| / W`, so the blend is symmetric for forward and reverse
+ * drags. Once `|wp.x| / W ≥ ANCHOR_BLEND_DIST` the anchor is fully
+ * mid-spine.
+ *
+ * Refines PR #82 (which used `clamp(wp.y, ±H/2)` unconditionally).
+ *
+ * @param wp           World drag-start point in page-local coords (spine at x=0).
+ * @param pageSize     {x: pageWidth, y: pageHeight}.
+ * @param blendDist    Optional override for `ANCHOR_BLEND_DIST` (units:
+ *   fraction of `pageWidth`). Must be > 0.
+ */
+export function computeGestureAnchorY(
+  wp: Vec2,
+  pageSize: Vec2,
+  blendDist: number = ANCHOR_BLEND_DIST,
+): number {
+  const W = pageSize.x;
+  const halfH = pageSize.y / 2;
+  const clampedY = clamp(wp.y, -halfH, halfH);
+  // Symmetric in sign(wp.x): reverse turns use |wp.x| just like forward turns.
+  const distFromSpine = W > 0 ? Math.abs(wp.x) / W : 0;
+  const blend = smoothstep(0, blendDist, distFromSpine);
+  // mix(clampedY, 0, blend) === clampedY * (1 - blend)
+  return clampedY * (1 - blend);
+}
+
 /** Wrap an angle to (-π, π]. */
 export function wrapAngle(a: number): number {
   let x = a;

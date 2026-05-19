@@ -152,6 +152,146 @@ zero-strain constraint, since real paper folds plastically there. This
 exemption is bounded and documented; it is not a license for general
 non-developable deformation away from the crease.
 
+## Bend-binding-tangent constraint
+
+Added 2026-05-14 based on a real-paper observation. The PR #82 Option B
+fix (pin `creaseAnchorY` at pointerdown) is the *Regime I* solution; this
+section formalizes the *Regime II* case it does not cover.
+
+### User observation (verbatim)
+
+> you should note that my hand is forced to move in reaction to the bend
+> hitting the constraint of the binding. I cannot continue to turn the
+> page when the bend is not parallel to the binding without choosing to
+> tear the page out of the binding or adjusting my hand as one end of the
+> bend rotates around the top or bottom of the binding depending on where
+> the bend's circumference is tangent to the binding. This is true is my
+> hand is very close to the page or higher above the page. The height of
+> my hand only changes the diameter of the bend in the paper, but as that
+> diameter gets larger (if I have my hand high above the book) it will
+> cause the circumference of the bend to become tangent the binding. In
+> this case the "bend" is the surface of the dihedral.
+
+### Geometry
+
+In page-local coords with the spine along ŷ at x=0:
+- Crease passes through `(0, anchorY)` with direction
+  `k̂ = (sin θ, cos θ)`. θ is the tilt angle from the spine.
+- The curl is a developable cylinder of radius `R` (set by bending
+  stiffness; "hand high above the book" ⇒ larger R) with axis parallel
+  to `k̂`.
+- The dihedral angle `φ ∈ [0, π]` is the rigid rotation around the
+  crease axis.
+
+The curl's *lateral reach* — how far the bent paper extends in 3D
+perpendicular to the crease axis — peaks at `R·sin(φ)`. Because the
+crease is tilted by θ, this lateral reach projects onto the spine
+direction with factor `|sin θ|`. The bend's *spine footprint* — the
+y-extent the bent material consumes along the binding — therefore
+extends from the crease anchor by at most
+
+> ΔY_max(φ) = R · sin(φ) · |sin θ|.
+
+### Two regimes
+
+**Regime I — free.** The bend stays inside the binding extent:
+
+> R · sin(φ) · |sin θ|  <  H/2 ∓ anchorY
+
+(top corner: `−`; bottom corner: `+`). The crease anchor is the per-gesture
+`anchorY` chosen at pointerdown (Option B, PR #82). The cursor's 2-DOF
+motion freely tilts the crease and varies φ.
+
+**Regime II — tangent.** The bend has reached the binding endpoint:
+
+> R · sin(φ) · |sin θ|  ≥  H/2 ∓ anchorY
+
+The crease's spine intersection migrates from `anchorY` to the binding
+endpoint `(0, ±H/2)`. Further cursor motion can no longer freely tilt
+the crease — the user's hand has only one degree of freedom remaining:
+rotation around the corner the bend has anchored to.
+
+The transition is symmetric in `sin θ`: `sin θ < 0` (flap leans toward
++y as φ rises) selects the **top** corner; `sin θ > 0` selects the
+**bottom**.
+
+### Closed-form critical values
+
+Critical dihedral (where tangency first occurs, for fixed `R, θ, anchorY`):
+
+> sin φ_crit = (H/2 ∓ anchorY) / (R · |sin θ|).
+
+NaN when `R · |sin θ| < H/2 ∓ anchorY` (bend never reaches that corner
+in a half-rotation).
+
+Critical curl radius (for fixed θ, anchorY; tangency at φ = π/2):
+
+> R_c = (H/2 ∓ anchorY) / |sin θ|.
+
+For `R > R_c` tangency occurs at `φ_crit < π/2`. **Doubling R exactly
+halves `sin φ_crit`** — the user's "higher hand ⇒ hits binding sooner"
+observation falls directly out of the closed form.
+
+### Numerical reproduction
+
+With the canonical setup `anchorY = 0`, `θ = 30°` (sin θ = 0.5),
+`H = 1`:
+
+| Stock     | R    | R·sin(π/2)·\|sin θ\| | H/2 − anchorY | sin φ_crit | φ_crit  | Regime at φ = π/2 |
+|-----------|------|---------------------|---------------|------------|---------|-------------------|
+| interior  | 0.25 | 0.125               | 0.5           | (NaN)      | (NaN)   | free              |
+| interior  | 0.6  | 0.30                | 0.5           | (NaN)      | (NaN)   | free              |
+| midrange  | 1.0  | 0.50                | 0.5           | 1.000      | π/2     | boundary          |
+| cover     | 2.0  | 1.00                | 0.5           | 0.500      | 0.524   | tangent-bottom    |
+| very loose| 4.0  | 2.00                | 0.5           | 0.250      | 0.253   | tangent-bottom    |
+
+The interior stock (`R = 0.25` per `DevelopableSurface.INTERIOR_STOCK`)
+never reaches tangency for this anchor/tilt. The cover stock (`R = 0.9`
+default) does. Doubling R from 2.0 to 4.0 halves `sin φ_crit` from
+0.500 to 0.250 — confirming the user's "higher hand → tangency at
+smaller turn angle."
+
+### Functional requirements
+
+**FR-P6. Bend-binding non-intersection.** Under any drag at any curl
+radius, the bend's spine footprint shall not penetrate the binding
+endpoints — the bent paper cannot pass through the cover's top or
+bottom corner. When the closed-form tangent condition is met, the
+crease's spine intersection shall migrate to the binding endpoint
+`(0, ±H/2)` rather than continuing past it.
+
+**FR-P7. Reduced cursor DOF in Regime II.** Once the bend is tangent
+at a binding corner, the cursor's two pixel-degrees of freedom shall be
+reinterpreted as one rotational degree of freedom (rotation around the
+binding corner). The user's `clientX`/`clientY` continues to track their
+hand; the drag-state interpretation projects the cursor onto the
+feasible-drag arc (the great circle around the binding corner in the
+crease-axis rotation plane).
+
+### Side-by-side diagram
+
+See `docs/evidence/bend-binding-tangent-regimes.svg`:
+
+![Bend-binding-tangent regimes](evidence/bend-binding-tangent-regimes.svg)
+
+### Conceptual fix (not yet implemented)
+
+1. Before each pointer-move, evaluate `regimeDetect()` in
+   `src/book/BindingConstraint.ts`.
+2. If `regime === 'free'`: apply the Option B path unchanged.
+3. If `regime === 'tangent-top'` or `'tangent-bottom'`:
+   - Snap the crease's spine intersection to `(0, ±H/2)`.
+   - Re-derive the crease tilt so the line passes through both the
+     binding corner *and* the cursor's projection onto the page plane.
+   - Translate further cursor motion into rotation around the binding
+     corner: `φ` in Regime II is the angle from the corner to the cursor
+     measured in the rotation plane perpendicular to the crease axis.
+4. The transition is detected by `tangentMargin` crossing zero. A small
+   hysteresis band may be useful to avoid jitter at the boundary.
+
+This module ships only the analytic detector; the renderer/state
+integration is the follow-up PR.
+
 ## Acceptance criteria / Validation
 
 The 35-fiducial trajectory dataset (`harness/baselines/`, 5×7 grid at
